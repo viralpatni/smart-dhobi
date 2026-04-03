@@ -1,6 +1,7 @@
-import React from 'react';
-
-const steps = [
+import React, { useState } from 'react';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '../../firebase';
+import toast from 'react-hot-toast';const steps = [
   { id: 'scheduled', label: 'Scheduled' },
   { id: 'droppedOff', label: 'Dropped Off' },
   { id: 'washing', label: 'Washing' },
@@ -11,15 +12,40 @@ const steps = [
 // Order mapping logic
 const statusOrder = {
   scheduled: 0,
-  onTheWay: 0, // Maps visually to same starting point
+  onTheWay: 0,
   droppedOff: 1,
   washing: 2,
   readyInRack: 3,
   collected: 4
 };
 
-const LiveStatusTracker = ({ currentStatus, rackNo }) => {
+const LiveStatusTracker = ({ currentStatus, rackNo, order }) => {
+  const [loading, setLoading] = useState(false);
   const currentIndex = statusOrder[currentStatus] ?? 0;
+
+  const handleDisputeAction = async (action) => {
+    if (!order?.id) return;
+    setLoading(true);
+    try {
+      const orderRef = doc(db, 'orders', order.id);
+      await updateDoc(orderRef, {
+        countDisputeStatus: action
+      });
+      if (action === 'confirmed') {
+        toast.success('Count confirmed.');
+      } else {
+        toast('Dispute raised. Speak to staff.', { icon: '⚠️' });
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to update status');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const hasCountUpdate = order?.verifiedCount && order?.declaredCount && order.verifiedCount !== order.declaredCount;
+  const hasMissingItems = order?.missingItemReported && order?.missingCount > 0;
 
   return (
     <div className="w-full bg-white rounded-xl shadow-sm border border-slate-100 p-6 mb-4">
@@ -52,7 +78,6 @@ const LiveStatusTracker = ({ currentStatus, rackNo }) => {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                   </svg>
                 )}
-                {/* Active Pulse Animation */}
                 {isActive && currentStatus !== 'collected' && (
                   <div className="absolute inset-0 rounded-full bg-teal-400 animate-pulse-ring"></div>
                 )}
@@ -68,7 +93,67 @@ const LiveStatusTracker = ({ currentStatus, rackNo }) => {
         })}
       </div>
 
-      <div className="mt-12">
+      <div className="mt-12 space-y-3">
+        {/* Count Update Notification */}
+        {hasCountUpdate && (
+          <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-amber-600 text-sm">📋</span>
+              <span className="text-amber-800 font-medium text-sm">Item Count Updated by Staff</span>
+            </div>
+            <p className="text-amber-700 text-xs">
+              Your declared count of <strong>{order.declaredCount}</strong> was updated to <strong>{order.verifiedCount}</strong> after staff verification.
+            </p>
+            {order.countDisputeStatus === 'pending' && (
+              <div className="mt-3">
+                <p className="text-amber-800 text-xs font-semibold mb-2 flex items-center gap-1">
+                  <span className="inline-block w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
+                  Awaiting your confirmation
+                </p>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => handleDisputeAction('confirmed')}
+                    disabled={loading}
+                    className="flex-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg py-2 text-xs font-bold transition-colors"
+                  >
+                    {loading ? '...' : 'Accept Count'}
+                  </button>
+                  <button 
+                    onClick={() => handleDisputeAction('disputed')}
+                    disabled={loading}
+                    className="flex-1 bg-white border border-amber-300 text-amber-700 hover:bg-amber-100 rounded-lg py-2 text-xs font-bold transition-colors"
+                  >
+                    {loading ? '...' : 'Dispute'}
+                  </button>
+                </div>
+              </div>
+            )}
+            {order.countDisputeStatus === 'confirmed' && (
+              <p className="text-green-700 text-xs font-bold mt-2 flex items-center gap-1">
+                <span>✓</span> You confirmed this count
+              </p>
+            )}
+            {order.countDisputeStatus === 'disputed' && (
+              <p className="text-red-600 text-xs font-bold mt-2 flex items-center gap-1">
+                <span>⚠️</span> You disputed this count. Contact counter.
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Missing Items Alert */}
+        {hasMissingItems && (
+          <div className="bg-red-50 rounded-lg p-4 border border-red-200 animate-pulse">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-red-600 text-sm">🚨</span>
+              <span className="text-red-800 font-bold text-sm">Missing Items Detected</span>
+            </div>
+            <p className="text-red-700 text-sm">
+              <strong>{order.missingCount}</strong> item(s) missing from your laundry. A report has been automatically filed. Please contact the laundry counter.
+            </p>
+          </div>
+        )}
+
         {currentStatus === 'readyInRack' && (
           <div className="bg-green-50 rounded-lg p-4 border border-green-200 text-center animate-pulse">
             <span className="text-green-800 font-medium">✨ Laundry is ready!</span>
@@ -76,10 +161,34 @@ const LiveStatusTracker = ({ currentStatus, rackNo }) => {
           </div>
         )}
 
-        {currentStatus === 'collected' && (
+        {currentStatus === 'collected' && !hasMissingItems && (
           <div className="bg-teal-50 rounded-lg p-4 border border-teal-200 text-center">
              <span className="text-teal-800 font-medium text-lg">✅ All done!</span>
              <p className="text-teal-700 text-sm mt-1">See you next wash.</p>
+          </div>
+        )}
+
+        {/* Order summary info */}
+        {order && (order.clothesCount > 0 || order.tokenId !== 'PENDING') && (
+          <div className="flex gap-3 mt-2">
+            {order.tokenId && order.tokenId !== 'PENDING' && (
+              <div className="flex-1 bg-slate-50 rounded-lg p-3 text-center border border-slate-100">
+                <p className="text-[10px] text-slate-500 uppercase font-bold">Token</p>
+                <p className="font-mono font-bold text-slate-800">{order.tokenId}</p>
+              </div>
+            )}
+            {order.clothesCount > 0 && (
+              <div className="flex-1 bg-slate-50 rounded-lg p-3 text-center border border-slate-100">
+                <p className="text-[10px] text-slate-500 uppercase font-bold">Items</p>
+                <p className="font-bold text-slate-800">{order.clothesCount}</p>
+              </div>
+            )}
+            {order.returnCount !== null && order.returnCount !== undefined && (
+              <div className={`flex-1 rounded-lg p-3 text-center border ${order.missingCount > 0 ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
+                <p className="text-[10px] text-slate-500 uppercase font-bold">Returned</p>
+                <p className={`font-bold ${order.missingCount > 0 ? 'text-red-700' : 'text-green-700'}`}>{order.returnCount}</p>
+              </div>
+            )}
           </div>
         )}
       </div>

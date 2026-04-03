@@ -79,6 +79,12 @@ const DhobiAnalytics = () => {
             <div className="text-right hidden sm:block">
                <p className="font-semibold text-gray-800 text-sm">{userData.name}</p>
             </div>
+            <button 
+              onClick={handleLogout}
+              className="text-xs font-bold text-slate-500 hover:text-red-500 transition-colors px-3 py-1.5 rounded-md border border-slate-200"
+            >
+              Logout
+            </button>
             <div className="w-10 h-10 rounded-full bg-teal-100 text-teal-700 font-bold flex items-center justify-center border border-teal-200">
               {userData.name.charAt(0)}
             </div>

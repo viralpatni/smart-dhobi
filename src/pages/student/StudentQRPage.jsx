@@ -1,10 +1,18 @@
 import React from 'react';
 import QRCodeCard from '../../components/student/QRCodeCard';
 import { useAuth } from '../../context/AuthContext';
+import { useStudentSchedule } from '../../hooks/useSchedule';
 import { Link } from 'react-router-dom';
+import Loader from '../../components/common/Loader';
 
 const StudentQRPage = () => {
-  const { userData } = useAuth();
+  const { userData, currentUser } = useAuth();
+  const { schedule, allMyDates, loading } = useStudentSchedule(currentUser?.uid);
+
+  if (loading) return <Loader fullScreen />;
+
+  const isLaundryDay = !!schedule;
+  const nextDate = allMyDates.find(d => d.isFuture);
 
   return (
     <div className="bg-slate-900 min-h-screen flex justify-center w-full">
@@ -19,14 +27,37 @@ const StudentQRPage = () => {
         </div>
 
         <div className="flex-1 flex flex-col items-center justify-center px-6">
-          <QRCodeCard 
-            uid={userData.uid} 
-            name={userData.name} 
-            roomNo={userData.roomNo} 
-          />
-          <p className="mt-8 text-slate-400 text-sm text-center max-w-[250px]">
-            Show this code at the laundry counter to drop off your clothes.
-          </p>
+          {isLaundryDay ? (
+            <>
+              <QRCodeCard 
+                uid={userData.uid} 
+                name={userData.name} 
+                roomNo={userData.roomNo} 
+              />
+              <p className="mt-8 text-slate-400 text-sm text-center max-w-[250px]">
+                Show this code at the laundry counter to drop off your clothes.
+              </p>
+            </>
+          ) : (
+            <div className="text-center px-4">
+              <div className="w-24 h-24 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-6 border-2 border-red-500/30">
+                <svg className="w-12 h-12 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m0 0v2m0-2h2m-2 0H10m-4.93 2.07A10 10 0 1119.07 4.93 10 10 0 015.07 19.07zM12 9v2m0 0v.01"></path></svg>
+              </div>
+              <h2 className="text-white text-xl font-bold mb-2">QR Code Locked 🔒</h2>
+              <p className="text-slate-400 text-sm mb-6">
+                Your QR pass is only active on your scheduled laundry day. This prevents misuse.
+              </p>
+              <div className="bg-white/5 border border-white/10 rounded-xl p-4 inline-block">
+                {nextDate ? (
+                  <p className="text-slate-300 text-sm">
+                    Next laundry: <span className="text-teal-400 font-bold">{nextDate.fullDate} ({nextDate.dayName})</span>
+                  </p>
+                ) : (
+                  <p className="text-slate-400 text-sm">No schedule uploaded for this month yet.</p>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Bottom Navigation */}

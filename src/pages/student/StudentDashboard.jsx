@@ -86,7 +86,7 @@ const StudentDashboard = () => {
 
           {/* Status Region */}
           {hasActiveOrder ? (
-            <LiveStatusTracker currentStatus={order.status} rackNo={order.rackNo} />
+            <LiveStatusTracker currentStatus={order.status} rackNo={order.rackNo} order={order} />
           ) : (
              schedule && <OnMyWayButton scheduleId={schedule.id} />
           )}

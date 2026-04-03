@@ -67,12 +67,22 @@ const StudentHistory = () => {
           ) : (
             <div className="space-y-4">
               {orders.map(order => {
-                const canReportMissing = order.status === 'collected' && !order.missingItemReported && isWithin24Hours(order.collectedTime);
+                const verifiedCount = order.verifiedCount || order.clothesCount || 0;
+                const returnCountVal = order.returnCount;
+                const hasReturnCount = returnCountVal !== null && returnCountVal !== undefined;
+                const countsMatch = hasReturnCount && returnCountVal >= verifiedCount;
+                const autoMissing = order.missingItemReported && order.missingCount > 0;
+                
+                // Only allow manual report if: collected, not already reported, within 24h, counts DON'T match
+                const canReportMissing = order.status === 'collected' 
+                  && !order.missingItemReported 
+                  && isWithin24Hours(order.collectedTime) 
+                  && !countsMatch;
                 
                 return (
                   <div key={order.id} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm relative overflow-hidden">
                     {/* Left border accent */}
-                    <div className={`absolute left-0 top-0 bottom-0 w-1 ${order.status === 'collected' ? 'bg-green-400' : 'bg-teal-400'}`}></div>
+                    <div className={`absolute left-0 top-0 bottom-0 w-1 ${autoMissing ? 'bg-red-400' : order.status === 'collected' ? 'bg-green-400' : 'bg-teal-400'}`}></div>
                     
                     <div className="flex justify-between items-start mb-3 pl-2">
                        <div>
@@ -84,9 +94,21 @@ const StudentHistory = () => {
                     
                     <div className="pl-2 flex gap-4 text-sm mt-3 border-t border-slate-100 pt-3">
                        <div className="flex-1">
-                         <span className="text-slate-500 block text-xs">Items</span>
-                         <span className="font-semibold text-slate-700">{order.clothesCount || '-'}</span>
+                         <span className="text-slate-500 block text-xs">Declared</span>
+                         <span className="font-semibold text-slate-700">{order.declaredCount || order.clothesCount || '-'}</span>
                        </div>
+                       {order.verifiedCount && (
+                         <div className="flex-1">
+                           <span className="text-slate-500 block text-xs">Verified</span>
+                           <span className={`font-semibold ${order.verifiedCount !== order.declaredCount ? 'text-amber-600' : 'text-green-600'}`}>{order.verifiedCount}</span>
+                         </div>
+                       )}
+                       {hasReturnCount && (
+                         <div className="flex-1">
+                           <span className="text-slate-500 block text-xs">Returned</span>
+                           <span className={`font-semibold ${returnCountVal < verifiedCount ? 'text-red-600' : 'text-green-600'}`}>{returnCountVal}</span>
+                         </div>
+                       )}
                        {order.rackNo && (
                          <div className="flex-1">
                            <span className="text-slate-500 block text-xs">Rack</span>
@@ -95,9 +117,29 @@ const StudentHistory = () => {
                        )}
                     </div>
 
-                    {order.missingItemReported && (
+                    {/* Auto-detected missing items */}
+                    {autoMissing && (
+                      <div className="mt-3 ml-2 flex items-start gap-2 text-xs font-medium text-red-700 bg-red-50 p-3 rounded-lg border border-red-200">
+                        <span className="text-base shrink-0">🚨</span>
+                        <div>
+                          <p className="font-bold mb-0.5">{order.missingCount} item(s) missing</p>
+                          <p className="text-red-600 font-normal">Auto-detected: verified {verifiedCount}, returned {returnCountVal}. Contact laundry counter for resolution.</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Manual report indicator (legacy) */}
+                    {order.missingItemReported && !autoMissing && (
                       <div className="mt-3 ml-2 flex items-center gap-1 text-xs font-medium text-red-600 bg-red-50 p-2 rounded">
                         <span>⚠ Missing item reported</span>
+                      </div>
+                    )}
+
+                    {/* Return count matches — report locked */}
+                    {order.status === 'collected' && countsMatch && !order.missingItemReported && (
+                      <div className="mt-3 ml-2 flex items-center gap-1 text-xs font-medium text-green-600 bg-green-50 p-2 rounded-lg border border-green-200">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"></path></svg>
+                        All {verifiedCount} items returned — no missing items
                       </div>
                     )}
 
