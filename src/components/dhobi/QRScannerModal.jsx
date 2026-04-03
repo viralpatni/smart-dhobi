@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
-import { doc, getDoc, collection, setDoc, updateDoc, increment } from 'firebase/firestore';
+import { doc, getDoc, collection, setDoc, updateDoc, increment, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
-import { generateToken } from '../../utils/generateToken';
 import { sendNotification } from '../../utils/sendNotification';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
@@ -10,16 +9,15 @@ import { useAuth } from '../../context/AuthContext';
 const QRScannerModal = ({ isOpen, onClose }) => {
   const [scannedUid, setScannedUid] = useState(null);
   const [studentRecord, setStudentRecord] = useState(null);
+  const [activeOrder, setActiveOrder] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [clothesCount, setClothesCount] = useState('');
-  const [notes, setNotes] = useState('');
+  const [tokenId, setTokenId] = useState('');
   const [successToken, setSuccessToken] = useState(null);
   
-  const { userData, currentUser } = useAuth();
+  const { currentUser } = useAuth();
 
   useEffect(() => {
     if (isOpen && !scannedUid && !successToken) {
-      // Initialize scanner
       const scanner = new Html5QrcodeScanner("reader", {
         qrbox: { width: 250, height: 250 },
         fps: 5,
@@ -33,7 +31,7 @@ const QRScannerModal = ({ isOpen, onClose }) => {
       }
 
       function onScanError(error) {
-        // Ignored, happens constantly during scanning
+        // Ignored
       }
 
       return () => {
@@ -44,13 +42,14 @@ const QRScannerModal = ({ isOpen, onClose }) => {
 
   useEffect(() => {
     if (scannedUid) {
-      fetchStudent(scannedUid);
+      fetchStudentAndOrder(scannedUid);
     }
   }, [scannedUid]);
 
-  const fetchStudent = async (uid) => {
+  const fetchStudentAndOrder = async (uid) => {
     setLoading(true);
     try {
+      // 1. Fetch student record
       const docRef = doc(db, 'users', uid);
       const docSnap = await getDoc(docRef);
       if (docSnap.exists() && docSnap.data().role === 'student') {
@@ -58,6 +57,20 @@ const QRScannerModal = ({ isOpen, onClose }) => {
       } else {
         toast.error('Invalid QR or student not found.');
         resetScanner();
+        return;
+      }
+
+      // 2. Fetch the student's active "onTheWay" order (which has clothes count)
+      const q = query(
+        collection(db, 'orders'),
+        where('studentId', '==', uid),
+        where('status', '==', 'onTheWay')
+      );
+      const orderSnap = await getDocs(q);
+      if (!orderSnap.empty) {
+        setActiveOrder({ id: orderSnap.docs[0].id, ...orderSnap.docs[0].data() });
+      } else {
+        setActiveOrder(null);
       }
     } catch (error) {
       toast.error('Error fetching student');
@@ -70,45 +83,60 @@ const QRScannerModal = ({ isOpen, onClose }) => {
   const resetScanner = () => {
     setScannedUid(null);
     setStudentRecord(null);
-    setClothesCount('');
-    setNotes('');
+    setActiveOrder(null);
+    setTokenId('');
     setSuccessToken(null);
   };
 
-  const handleGenerateToken = async (e) => {
+  const handleConfirmDropOff = async (e) => {
     e.preventDefault();
-    if (!clothesCount || isNaN(clothesCount)) {
-      toast.error('Please enter a valid clothes count');
+    if (!tokenId.trim()) {
+      toast.error('Please enter a token number');
       return;
     }
 
     setLoading(true);
     try {
-      const tokenId = generateToken();
-      const orderRef = doc(collection(db, 'orders'));
-      
-      await setDoc(orderRef, {
-        tokenId,
-        studentId: studentRecord.uid,
-        studentName: studentRecord.name,
-        studentPhone: studentRecord.phone,
-        studentRoom: studentRecord.roomNo,
-        dhobiId: currentUser.uid,
-        clothesCount: parseInt(clothesCount, 10),
-        notes: notes,
-        rackNo: null,
-        status: 'droppedOff',
-        dropOffTime: new Date(),
-        rackAssignedTime: null,
-        collectedTime: null,
-        missingItemReported: false,
-        missingItemDesc: '',
-        notificationLog: {
-          dropOffAlert: true,
-          rackReadyAlert: false
-        },
-        createdAt: new Date()
-      });
+      const finalToken = tokenId.trim();
+      const clothesCount = activeOrder?.clothesCount || 0;
+
+      if (activeOrder) {
+        // Update the existing "onTheWay" order to "droppedOff"
+        const orderRef = doc(db, 'orders', activeOrder.id);
+        await updateDoc(orderRef, {
+          tokenId: finalToken,
+          dhobiId: currentUser.uid,
+          status: 'droppedOff',
+          dropOffTime: new Date(),
+        });
+      } else {
+        // No prior order — create a fresh one (walk-in without app notification)
+        const orderRef = doc(collection(db, 'orders'));
+        await setDoc(orderRef, {
+          tokenId: finalToken,
+          studentId: studentRecord.uid,
+          studentName: studentRecord.name,
+          studentPhone: studentRecord.phone,
+          studentRoom: studentRecord.roomNo,
+          studentBlock: studentRecord.hostelBlock,
+          studentUniqueId: studentRecord.uniqueId || '',
+          dhobiId: currentUser.uid,
+          clothesCount: 0,
+          notes: '',
+          rackNo: null,
+          status: 'droppedOff',
+          dropOffTime: new Date(),
+          rackAssignedTime: null,
+          collectedTime: null,
+          missingItemReported: false,
+          missingItemDesc: '',
+          notificationLog: {
+            dropOffAlert: true,
+            rackReadyAlert: false
+          },
+          createdAt: new Date()
+        });
+      }
 
       // Update Analytics
       const today = new Date().toISOString().split('T')[0];
@@ -122,24 +150,23 @@ const QRScannerModal = ({ isOpen, onClose }) => {
           [`hourlyDropOffs.${hour}`]: increment(1)
         });
       } else {
-        // Initializer covered by hooks/seed, but just in case
         await setDoc(analyticsRef, {
            date: today,
            totalDropOffs: 1,
            totalCollected: 0,
            totalMissingReports: 0,
-           hourlyDropOffs: { "08": 0, "09": 0, "10": 0, "11": 0, "12": 0, "13": 0, "14": 0, "15": 0, "16": 0, "17": 0, "18": 0, [hour]: 1 }
+           hourlyDropOffs: { [hour]: 1 }
         });
       }
 
-      // Send WhatsApp Notification
+      // Send Notification
       await sendNotification(
         studentRecord.phone, 
-        `✅ Your laundry has been received! Token: ${tokenId}. Track status in the SmartDhobi app.`
+        `✅ Your laundry has been received! Token: ${finalToken}. Track status in the SmartDhobi app.`
       );
 
-      setSuccessToken(tokenId);
-      toast.success(`Token ${tokenId} generated!`);
+      setSuccessToken(finalToken);
+      toast.success(`Token ${finalToken} assigned!`);
       
       setTimeout(() => {
         onClose();
@@ -148,7 +175,7 @@ const QRScannerModal = ({ isOpen, onClose }) => {
 
     } catch (error) {
       console.error(error);
-      toast.error('Failed to generate token');
+      toast.error('Failed to process drop-off');
     } finally {
       setLoading(false);
     }
@@ -166,7 +193,7 @@ const QRScannerModal = ({ isOpen, onClose }) => {
       <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
           <h3 className="font-bold text-gray-800 text-lg flex items-center gap-2">
-            <span className="text-xl">📷</span> Scan QR
+            <span className="text-xl">📷</span> Scan Student QR
           </h3>
           <button onClick={handleClose} className="text-slate-400 hover:text-slate-600">✕</button>
         </div>
@@ -177,7 +204,7 @@ const QRScannerModal = ({ isOpen, onClose }) => {
               <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
                 <svg className="w-10 h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
               </div>
-              <h4 className="text-2xl font-bold text-gray-800 mb-2">Token Generated!</h4>
+              <h4 className="text-2xl font-bold text-gray-800 mb-2">Drop-Off Confirmed!</h4>
               <div className="bg-slate-100 py-3 px-6 rounded-lg inline-block">
                 <span className="font-mono text-3xl font-bold text-teal-600 tracking-wider">{successToken}</span>
               </div>
@@ -193,45 +220,71 @@ const QRScannerModal = ({ isOpen, onClose }) => {
             </div>
           ) : studentRecord ? (
             <div className="animate-fade-in">
-              <div className="flex items-center gap-4 bg-teal-50 p-4 rounded-xl mb-6 border border-teal-100">
-                <div className="w-16 h-16 rounded-full bg-teal-200 flex items-center justify-center text-teal-800 font-bold text-2xl">
-                  {studentRecord.name.charAt(0)}
+              {/* Student Info Card */}
+              <div className="bg-teal-50 p-5 rounded-xl mb-5 border border-teal-100">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="w-16 h-16 rounded-full bg-teal-200 flex items-center justify-center text-teal-800 font-bold text-2xl shrink-0">
+                    {studentRecord.name.charAt(0)}
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="font-bold text-lg text-gray-800">{studentRecord.name}</h4>
+                    {studentRecord.uniqueId && (
+                      <p className="text-sm text-teal-700 font-mono font-semibold">{studentRecord.uniqueId}</p>
+                    )}
+                  </div>
+                  <button onClick={resetScanner} className="text-xs text-teal-600 underline shrink-0">Rescan</button>
                 </div>
-                <div>
-                  <h4 className="font-bold text-lg text-gray-800">{studentRecord.name}</h4>
-                  <p className="text-slate-600">Room: <span className="font-semibold">{studentRecord.roomNo}</span></p>
-                  <p className="text-slate-500 text-sm">{studentRecord.phone}</p>
+                
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-white rounded-lg p-3 text-center border border-teal-100">
+                    <p className="text-[10px] uppercase text-slate-500 font-bold tracking-wider">Room</p>
+                    <p className="font-bold text-gray-800 text-lg">{studentRecord.roomNo}</p>
+                  </div>
+                  <div className="bg-white rounded-lg p-3 text-center border border-teal-100">
+                    <p className="text-[10px] uppercase text-slate-500 font-bold tracking-wider">Block</p>
+                    <p className="font-bold text-gray-800 text-lg">{studentRecord.hostelBlock}</p>
+                  </div>
+                  <div className={`rounded-lg p-3 text-center border ${activeOrder?.clothesCount ? 'bg-amber-50 border-amber-200' : 'bg-white border-teal-100'}`}>
+                    <p className="text-[10px] uppercase text-slate-500 font-bold tracking-wider">Clothes</p>
+                    <p className={`font-bold text-lg ${activeOrder?.clothesCount ? 'text-amber-700' : 'text-slate-400'}`}>
+                      {activeOrder?.clothesCount || '—'}
+                    </p>
+                  </div>
                 </div>
-                <button onClick={resetScanner} className="ml-auto text-xs text-teal-600 underline">Rescan</button>
+
+                {studentRecord.phone && (
+                  <p className="text-xs text-slate-500 mt-3 text-center">{studentRecord.phone}</p>
+                )}
               </div>
 
-              <form onSubmit={handleGenerateToken}>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Number of Clothes *</label>
-                    <input 
-                      type="number" 
-                      required
-                      min="1"
-                      value={clothesCount}
-                      onChange={e => setClothesCount(e.target.value)}
-                      className="w-full border border-slate-300 rounded-lg p-3 focus:ring-teal-500 focus:border-teal-500 text-lg"
-                      placeholder="e.g., 12"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Notes (Optional)</label>
-                    <input 
-                      type="text" 
-                      value={notes}
-                      onChange={e => setNotes(e.target.value)}
-                      className="w-full border border-slate-300 rounded-lg p-3 focus:ring-teal-500 focus:border-teal-500 text-sm"
-                      placeholder="e.g., handle with care, delicate wash..."
-                    />
-                  </div>
+              {/* Status indicator */}
+              {activeOrder ? (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-5 flex items-center gap-2 text-sm text-green-700 font-medium">
+                  <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"></path></svg>
+                  Student notified via app — {activeOrder.clothesCount} items declared
+                </div>
+              ) : (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-5 flex items-center gap-2 text-sm text-amber-700 font-medium">
+                  <span>⚠️</span> Walk-in — student did not notify via app
+                </div>
+              )}
+
+              {/* Token Input */}
+              <form onSubmit={handleConfirmDropOff}>
+                <div className="mb-5">
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Assign Token Number *</label>
+                  <input 
+                    type="text" 
+                    required
+                    value={tokenId}
+                    onChange={e => setTokenId(e.target.value)}
+                    className="w-full border-2 border-slate-200 rounded-xl p-4 text-center text-2xl font-bold font-mono focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 text-teal-700"
+                    placeholder="e.g. DH-1234"
+                    autoFocus
+                  />
                 </div>
 
-                <div className="mt-8 flex gap-3">
+                <div className="flex gap-3">
                   <button
                     type="button"
                     onClick={handleClose}
@@ -242,9 +295,9 @@ const QRScannerModal = ({ isOpen, onClose }) => {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="flex-[2] py-3 px-4 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-medium flex justify-center items-center shadow-lg shadow-teal-600/30 transition-colors text-lg"
+                    className="flex-[2] py-3 px-4 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold flex justify-center items-center shadow-lg shadow-teal-600/30 transition-colors"
                   >
-                    {loading ? <div className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin"></div> : 'Generate Token'}
+                    {loading ? <div className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin"></div> : 'Confirm Drop-Off'}
                   </button>
                 </div>
               </form>

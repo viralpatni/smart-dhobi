@@ -7,13 +7,12 @@ import OnMyWayButton from '../../components/student/OnMyWayButton';
 import { Link, useNavigate } from 'react-router-dom';
 import { auth } from '../../firebase';
 import Loader from '../../components/common/Loader';
-import { formatStandardDate } from '../../utils/formatDate';
 
 const StudentDashboard = () => {
   const { userData, currentUser } = useAuth();
   const navigate = useNavigate();
   const { order, loading: orderLoading } = useStudentOrder(currentUser?.uid);
-  const { schedule, loading: scheduleLoading } = useStudentSchedule(currentUser?.uid);
+  const { schedule, allMyDates, monthName, loading: scheduleLoading } = useStudentSchedule(currentUser?.uid);
 
   const handleLogout = () => {
     auth.signOut();
@@ -24,8 +23,12 @@ const StudentDashboard = () => {
 
   const hasActiveOrder = order && order.status !== 'collected';
 
+  const upcomingDates = allMyDates.filter(d => d.isFuture);
+  const pastDates = allMyDates.filter(d => d.isPast);
+  const nextLaundry = upcomingDates.length > 0 ? upcomingDates[0] : null;
+
   return (
-    <div className="bg-surface min-h-screen flex justify-center w-full">
+    <div className="bg-slate-50 min-h-screen flex justify-center w-full">
       <div className="w-full max-w-[420px] bg-white min-h-screen shadow-lg relative pb-20">
         
         {/* Header */}
@@ -53,25 +56,30 @@ const StudentDashboard = () => {
         <div className="px-6 pt-24 pb-6">
           
           {/* Today's Slot Card */}
-          <div className="bg-gradient-to-br from-teal-600 to-teal-500 rounded-2xl p-5 text-white mb-6 shadow-md shadow-teal-500/20 relative overflow-hidden">
+          <div className={`rounded-2xl p-5 text-white mb-6 shadow-md relative overflow-hidden ${schedule ? 'bg-gradient-to-br from-teal-600 to-teal-500 shadow-teal-500/20' : 'bg-gradient-to-br from-slate-600 to-slate-500 shadow-slate-500/20'}`}>
              <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-10 -mt-10 blur-xl"></div>
              
              {schedule ? (
                <>
                  <div className="flex items-center gap-2 mb-3">
-                   <span className="text-xl">📅</span>
-                   <h3 className="font-medium text-teal-50">Today's Laundry Slot</h3>
+                   <span className="text-xl">🧺</span>
+                   <h3 className="font-medium text-teal-50">Your Laundry is Today!</h3>
                  </div>
                  <div className="space-y-1">
-                   <p className="text-2xl font-bold">{schedule.slotTime}</p>
-                   <p className="text-teal-100 text-sm">{schedule.hostelBlock}</p>
+                   <p className="text-2xl font-bold">🟢 Active</p>
+                   <p className="text-teal-100 text-sm">{schedule.hostelBlock} • Rooms {schedule.roomRange}</p>
+                   <p className="text-teal-200 text-xs mt-1">Tap "I'm On My Way" when you're ready to drop off your clothes.</p>
                  </div>
                </>
              ) : (
                <div className="flex flex-col items-center justify-center py-4 text-center">
-                 <span className="text-3xl mb-2">🧺</span>
+                 <span className="text-3xl mb-2">😴</span>
                  <p className="font-medium">No laundry scheduled today.</p>
-                 <p className="text-teal-100 text-sm mt-1">Check back on your scheduled day.</p>
+                 {nextLaundry ? (
+                   <p className="text-slate-300 text-sm mt-1">Next laundry: <strong>{nextLaundry.fullDate} ({nextLaundry.dayName})</strong></p>
+                 ) : (
+                   <p className="text-slate-300 text-sm mt-1">No upcoming schedule found this month.</p>
+                 )}
                </div>
              )}
           </div>
@@ -81,6 +89,91 @@ const StudentDashboard = () => {
             <LiveStatusTracker currentStatus={order.status} rackNo={order.rackNo} />
           ) : (
              schedule && <OnMyWayButton scheduleId={schedule.id} />
+          )}
+
+          {/* ── Monthly Schedule Timeline ── */}
+          {allMyDates.length > 0 && (
+            <div className="mt-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-base font-bold text-gray-800 flex items-center gap-2">
+                  <span>📅</span> My Laundry Schedule
+                </h2>
+                <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">{monthName}</span>
+              </div>
+
+              <div className="space-y-2">
+                {allMyDates.map((d) => (
+                  <div
+                    key={d.date} 
+                    className={`flex items-center gap-4 p-3 rounded-xl border transition-all ${
+                      d.isToday 
+                        ? 'bg-teal-50 border-teal-300 shadow-sm shadow-teal-100' 
+                        : d.isPast 
+                          ? 'bg-slate-50 border-slate-100 opacity-60' 
+                          : 'bg-white border-slate-200 hover:border-teal-200'
+                    }`}
+                  >
+                    {/* Date Circle */}
+                    <div className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center shrink-0 ${
+                      d.isToday 
+                        ? 'bg-teal-600 text-white shadow-md shadow-teal-600/30' 
+                        : d.isPast 
+                          ? 'bg-slate-200 text-slate-500' 
+                          : 'bg-slate-100 text-slate-700'
+                    }`}>
+                      <span className="text-lg font-bold leading-none">{d.date}</span>
+                      <span className="text-[9px] uppercase font-semibold mt-0.5">{d.dayName}</span>
+                    </div>
+
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm font-semibold ${d.isToday ? 'text-teal-700' : 'text-gray-700'}`}>
+                        {d.isToday ? '🟢 Today — Your Laundry Day!' : d.isPast ? 'Completed' : 'Upcoming'}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {userData.hostelBlock} • Rooms {d.roomRange}
+                      </p>
+                    </div>
+
+                    {/* Status Badge */}
+                    <div className={`shrink-0 text-[10px] font-bold px-2 py-1 rounded-full ${
+                      d.isToday 
+                        ? 'bg-teal-600 text-white' 
+                        : d.isPast 
+                          ? 'bg-slate-200 text-slate-500 line-through' 
+                          : 'bg-blue-50 text-blue-600'
+                    }`}>
+                      {d.isToday ? 'TODAY' : d.isPast ? 'DONE' : d.fullDate}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Stats Footer */}
+              <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                  <p className="text-lg font-bold text-slate-800">{allMyDates.length}</p>
+                  <p className="text-[10px] text-slate-500 font-medium uppercase">Total Days</p>
+                </div>
+                <div className="bg-teal-50 rounded-xl p-3 border border-teal-100">
+                  <p className="text-lg font-bold text-teal-700">{upcomingDates.length}</p>
+                  <p className="text-[10px] text-teal-600 font-medium uppercase">Upcoming</p>
+                </div>
+                <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                  <p className="text-lg font-bold text-slate-500">{pastDates.length}</p>
+                  <p className="text-[10px] text-slate-400 font-medium uppercase">Completed</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* No schedule at all message */}
+          {allMyDates.length === 0 && !schedule && (
+            <div className="mt-6 bg-amber-50 border border-amber-200 rounded-xl p-5 text-center">
+              <span className="text-3xl">📋</span>
+              <p className="font-semibold text-amber-800 mt-2">No schedule uploaded yet</p>
+              <p className="text-sm text-amber-600 mt-1">Your Dhobi hasn't uploaded this month's schedule. Check back soon!</p>
+            </div>
           )}
 
         </div>

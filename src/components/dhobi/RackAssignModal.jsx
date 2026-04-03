@@ -1,56 +1,39 @@
-import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, doc, updateDoc, onSnapshot } from 'firebase/firestore';
+import React, { useState } from 'react';
+import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import toast from 'react-hot-toast';
 import { sendNotification } from '../../utils/sendNotification';
 
 const RackAssignModal = ({ isOpen, onClose, order }) => {
-  const [racks, setRacks] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [rackNo, setRackNo] = useState('');
   const [assigning, setAssigning] = useState(false);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    setLoading(true);
-    const q = query(collection(db, 'racks'));
-    const unsub = onSnapshot(q, (snapshot) => {
-      const rackData = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      // Sort numerically by rack number
-      rackData.sort((a, b) => parseInt(a.rackNumber) - parseInt(b.rackNumber));
-      setRacks(rackData);
-      setLoading(false);
-    });
+  if (!isOpen || !order) return null;
 
-    return () => unsub();
-  }, [isOpen]);
+  const handleAssign = async (e) => {
+    e.preventDefault();
+    if (!rackNo.trim()) {
+      toast.error('Please enter a rack number');
+      return;
+    }
 
-  const handleAssign = async (rack) => {
-    if (rack.isOccupied) return;
-    
     setAssigning(true);
     try {
-      // 1. Update Order
       const orderRef = doc(db, 'orders', order.id);
       await updateDoc(orderRef, {
         status: 'readyInRack',
-        rackNo: rack.rackNumber,
+        rackNo: rackNo.trim(),
         rackAssignedTime: new Date()
       });
 
-      // 2. Update Rack
-      const rackRef = doc(db, 'racks', rack.id);
-      await updateDoc(rackRef, {
-        isOccupied: true,
-        currentOrderId: order.id
-      });
-
-      // 3. Send Notification
+      // Send Notification to student
       await sendNotification(
         order.studentPhone,
-        `🎉 Your laundry is clean and ready! Please collect from Rack No. ${rack.rackNumber}. — SmartDhobi`
+        `🎉 Your laundry is clean and ready! Please collect from Rack No. ${rackNo.trim()}. — SmartDhobi`
       );
 
-      toast.success(`Assigned to Rack ${rack.rackNumber}`);
+      toast.success(`Assigned to Rack ${rackNo.trim()}`);
+      setRackNo('');
       onClose();
     } catch (error) {
       console.error(error);
@@ -60,45 +43,60 @@ const RackAssignModal = ({ isOpen, onClose, order }) => {
     }
   };
 
-  if (!isOpen || !order) return null;
-
   return (
-    <div className="fixed inset-0 bg-slate-900/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-2xl shadow-xl overflow-hidden flex flex-col">
-        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-xl overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
           <div>
             <h3 className="font-bold text-gray-800 text-lg">Assign Rack</h3>
             <p className="text-sm text-slate-500">Order: <span className="font-mono text-slate-700">{order.tokenId}</span> ({order.studentName})</p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">✕</button>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 bg-white shadow-sm p-1.5 rounded-md border border-slate-200">✕</button>
         </div>
         
-        <div className="p-6 overflow-y-auto max-h-[60vh]">
-          {loading ? (
-            <div className="flex justify-center p-8">
-              <div className="w-8 h-8 border-4 border-teal-100 border-t-teal-600 rounded-full animate-spin"></div>
+        <div className="p-6">
+          {/* Order Summary */}
+          <div className="bg-teal-50 border border-teal-100 rounded-xl p-4 mb-5 flex items-center gap-4">
+            <div className="w-12 h-12 rounded-full bg-teal-200 flex items-center justify-center text-teal-800 font-bold text-xl shrink-0">
+              {order.studentName?.charAt(0)}
             </div>
-          ) : (
-            <div className="grid grid-cols-4 sm:grid-cols-5 gap-3">
-              {racks.map(rack => (
-                <button
-                  key={rack.id}
-                  disabled={rack.isOccupied || assigning}
-                  onClick={() => handleAssign(rack)}
-                  className={`relative p-3 rounded-xl border-2 flex flex-col items-center justify-center h-20 transition-all font-medium
-                    ${rack.isOccupied 
-                      ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed hidden' // Or opacity-50
-                      : 'bg-white border-teal-100 text-teal-700 hover:border-teal-400 hover:bg-teal-50 cursor-pointer shadow-sm'
-                    }
-                  `}
-                >
-                  <span className="text-xs uppercase mb-1">Rack</span>
-                  <span className="text-xl font-bold">{rack.rackNumber}</span>
-                  {rack.isOccupied && <span className="absolute inset-0 bg-slate-100/50 rounded-xl"></span>}
-                </button>
-              ))}
+            <div>
+              <p className="font-bold text-gray-800">{order.studentName}</p>
+              <p className="text-sm text-slate-600">Room: {order.studentRoom} • {order.clothesCount} items</p>
             </div>
-          )}
+          </div>
+
+          <form onSubmit={handleAssign}>
+            <div className="mb-5">
+              <label className="block text-sm font-medium text-slate-700 mb-2">Rack Number *</label>
+              <input 
+                type="text" 
+                required
+                value={rackNo}
+                onChange={(e) => setRackNo(e.target.value)}
+                className="w-full border-2 border-slate-200 rounded-xl p-4 text-center text-3xl font-bold font-mono focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 text-teal-700"
+                placeholder="e.g. R-5"
+                autoFocus
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 py-3 px-4 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={assigning}
+                className="flex-[2] py-3 px-4 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold flex justify-center items-center shadow-lg shadow-teal-600/30 transition-colors"
+              >
+                {assigning ? <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin"></div> : 'Assign & Notify Student'}
+              </button>
+            </div>
+          </form>
         </div>
       </div>
     </div>

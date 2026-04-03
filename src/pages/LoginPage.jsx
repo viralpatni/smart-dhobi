@@ -24,13 +24,18 @@ const LoginPage = () => {
     setLoading(true);
     try {
       let userCredential;
-      const formattedEmail = email.includes('@') ? email : `${email.toLowerCase().replace(/[^a-z0-9]/g, '')}@smartdhobi.com`;
+      // Convert Registration ID / Staff ID to the seamless email format
+      // Must match exactly what SignupPage generates
+      const formattedEmail = email.includes('@') 
+        ? email 
+        : `${email.toLowerCase().replace(/[^a-z0-9]/g, '')}@smartdhobi.com`;
 
       try {
         userCredential = await signInWithEmailAndPassword(auth, formattedEmail, password);
       } catch (authErr) {
-        // Auto-create demo users if they don't exist in Firebase Auth yet!
-        if (formattedEmail.includes('@smartdhobi.com') && (formattedEmail.includes('student') || formattedEmail.includes('dhobi') || formattedEmail.includes('admin'))) {
+        // Only auto-create for the 3 built-in demo accounts
+        const isDemoAccount = ['student@smartdhobi.com', 'dhobi@smartdhobi.com', 'admin@smartdhobi.com'].includes(formattedEmail);
+        if (isDemoAccount && authErr.code === 'auth/user-not-found') {
           userCredential = await createUserWithEmailAndPassword(auth, formattedEmail, password);
         } else {
           throw authErr;
@@ -47,18 +52,18 @@ const LoginPage = () => {
         uRole = userDoc.data().role;
       } else {
         // Provision the Firestore document for newly created demo users
-        if (email.includes('student')) uRole = 'student';
-        else if (email.includes('dhobi')) uRole = 'staff';
-        else if (email.includes('admin')) uRole = 'admin';
+        if (formattedEmail.includes('student')) uRole = 'student';
+        else if (formattedEmail.includes('dhobi')) uRole = 'staff';
+        else if (formattedEmail.includes('admin')) uRole = 'admin';
 
         await setDoc(userDocRef, {
           uid: user.uid,
-          name: email.split('@')[0].toUpperCase(),
-          email: email,
+          name: formattedEmail.split('@')[0].toUpperCase(),
+          email: formattedEmail,
           phone: '+919876543210',
           role: uRole,
           hostelBlock: 'Block A',
-          roomNo: 'A-101',
+          roomNo: '101',
           qrCodeData: user.uid,
           fcmToken: '',
           createdAt: new Date()
@@ -70,8 +75,18 @@ const LoginPage = () => {
       else if (uRole === 'admin') navigate('/admin/dashboard');
 
     } catch (error) {
-      console.error(error);
-      toast.error('Invalid credentials');
+      console.error('Login error:', error.code, error.message);
+      if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
+        toast.error('No account found with this ID. Please sign up first.');
+      } else if (error.code === 'auth/wrong-password') {
+        toast.error('Wrong password. Please try again.');
+      } else if (error.code === 'auth/too-many-requests') {
+        toast.error('Too many failed attempts. Please wait a moment and try again.');
+      } else if (error.code === 'auth/invalid-email') {
+        toast.error('Invalid ID format. Please check and try again.');
+      } else {
+        toast.error(`Login failed: ${error.message}`);
+      }
     } finally {
       setLoading(false);
     }

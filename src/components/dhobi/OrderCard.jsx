@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import StatusBadge from '../common/StatusBadge';
 import { formatTimeAgo } from '../../utils/formatDate';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import toast from 'react-hot-toast';
 
@@ -54,6 +54,20 @@ const OrderCard = ({ order, onAssignRack }) => {
     }
   };
 
+  const handleDelete = async () => {
+    if (!window.confirm(`Remove ${order.studentName}'s entry from the queue?`)) return;
+    setLoading(true);
+    try {
+      await deleteDoc(doc(db, 'orders', order.id));
+      toast.success('Entry removed');
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to remove entry');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow mb-3">
       <div className="flex justify-between items-start mb-2">
@@ -61,7 +75,17 @@ const OrderCard = ({ order, onAssignRack }) => {
           <h4 className="font-bold text-gray-800">{order.studentName}</h4>
           <span className="font-mono text-xs font-semibold bg-slate-100 px-2 py-0.5 rounded text-slate-700">{order.tokenId}</span>
         </div>
-        <StatusBadge status={order.status} />
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={handleDelete}
+            disabled={loading}
+            className="text-slate-300 hover:text-red-500 transition-colors p-1" 
+            title="Remove entry"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+          </button>
+          <StatusBadge status={order.status} />
+        </div>
       </div>
       
       <div className="flex gap-4 text-sm mt-3 text-slate-600">
