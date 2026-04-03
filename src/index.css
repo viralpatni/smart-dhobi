@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-surface text-slate-900 font-sans;
+  }
+}
+
+@layer utilities {
+  .animate-pulse-ring {
+    animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+  }
+  
+  @keyframes pulse-ring {
+    0% { transform: scale(0.8); opacity: 0.5; }
+    80%, 100% { transform: scale(2.5); opacity: 0; }
+  }
+}
