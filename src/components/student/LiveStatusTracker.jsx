@@ -95,51 +95,7 @@ const LiveStatusTracker = ({ currentStatus, rackNo, order }) => {
 
       <div className="mt-12 space-y-3">
         {/* Count Update Notification */}
-        {hasCountUpdate && (
-          <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-amber-600 text-sm">📋</span>
-              <span className="text-amber-800 font-medium text-sm">Item Count Updated by Staff</span>
-            </div>
-            <p className="text-amber-700 text-xs">
-              Your declared count of <strong>{order.declaredCount}</strong> was updated to <strong>{order.verifiedCount}</strong> after staff verification.
-            </p>
-            {order.countDisputeStatus === 'pending' && (
-              <div className="mt-3">
-                <p className="text-amber-800 text-xs font-semibold mb-2 flex items-center gap-1">
-                  <span className="inline-block w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
-                  Awaiting your confirmation
-                </p>
-                <div className="flex gap-2">
-                  <button 
-                    onClick={() => handleDisputeAction('confirmed')}
-                    disabled={loading}
-                    className="flex-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg py-2 text-xs font-bold transition-colors"
-                  >
-                    {loading ? '...' : 'Accept Count'}
-                  </button>
-                  <button 
-                    onClick={() => handleDisputeAction('disputed')}
-                    disabled={loading}
-                    className="flex-1 bg-white border border-amber-300 text-amber-700 hover:bg-amber-100 rounded-lg py-2 text-xs font-bold transition-colors"
-                  >
-                    {loading ? '...' : 'Dispute'}
-                  </button>
-                </div>
-              </div>
-            )}
-            {order.countDisputeStatus === 'confirmed' && (
-              <p className="text-green-700 text-xs font-bold mt-2 flex items-center gap-1">
-                <span>✓</span> You confirmed this count
-              </p>
-            )}
-            {order.countDisputeStatus === 'disputed' && (
-              <p className="text-red-600 text-xs font-bold mt-2 flex items-center gap-1">
-                <span>⚠️</span> You disputed this count. Contact counter.
-              </p>
-            )}
-          </div>
-        )}
+        {/* Removed count update notification for students */}
 
         {/* Missing Items Alert */}
         {hasMissingItems && (
@@ -169,28 +125,7 @@ const LiveStatusTracker = ({ currentStatus, rackNo, order }) => {
         )}
 
         {/* Order summary info */}
-        {order && (order.clothesCount > 0 || order.tokenId !== 'PENDING') && (
-          <div className="flex gap-3 mt-2">
-            {order.tokenId && order.tokenId !== 'PENDING' && (
-              <div className="flex-1 bg-slate-50 rounded-lg p-3 text-center border border-slate-100">
-                <p className="text-[10px] text-slate-500 uppercase font-bold">Token</p>
-                <p className="font-mono font-bold text-slate-800">{order.tokenId}</p>
-              </div>
-            )}
-            {order.clothesCount > 0 && (
-              <div className="flex-1 bg-slate-50 rounded-lg p-3 text-center border border-slate-100">
-                <p className="text-[10px] text-slate-500 uppercase font-bold">Items</p>
-                <p className="font-bold text-slate-800">{order.clothesCount}</p>
-              </div>
-            )}
-            {order.returnCount !== null && order.returnCount !== undefined && (
-              <div className={`flex-1 rounded-lg p-3 text-center border ${order.missingCount > 0 ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
-                <p className="text-[10px] text-slate-500 uppercase font-bold">Returned</p>
-                <p className={`font-bold ${order.missingCount > 0 ? 'text-red-700' : 'text-green-700'}`}>{order.returnCount}</p>
-              </div>
-            )}
-          </div>
-        )}
+        {/* Removed order summary info for students */}
       </div>
     </div>
   );

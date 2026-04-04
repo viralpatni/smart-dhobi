@@ -28,8 +28,8 @@ const RackAssignModal = ({ isOpen, onClose, order }) => {
 
       // Send Notification to student
       await sendNotification(
-        order.studentPhone,
-        `🎉 Your laundry is clean and ready! Please collect from Rack No. ${rackNo.trim()}. — SmartDhobi`
+        order.studentId,
+        `✅ Your laundry (${order.tokenId}) is clean and ready for pickup! Collect it from Rack ${rackNo.trim()}. — SmartDhobi`
       );
 
       toast.success(`Assigned to Rack ${rackNo.trim()}`);
@@ -62,7 +62,7 @@ const RackAssignModal = ({ isOpen, onClose, order }) => {
             </div>
             <div>
               <p className="font-bold text-gray-800">{order.studentName}</p>
-              <p className="text-sm text-slate-600">Room: {order.studentRoom} • {order.clothesCount} items</p>
+              <p className="text-sm text-slate-600">Room: {order.studentRoom}</p>
             </div>
           </div>
 

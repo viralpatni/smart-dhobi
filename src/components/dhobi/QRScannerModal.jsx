@@ -131,7 +131,7 @@ const QRScannerModal = ({ isOpen, onClose }) => {
         if (analyticsSnap.exists()) {
           await updateDoc(analyticsRef, { totalMissingReports: increment(1) });
         }
-        await sendNotification(studentRecord.phone, `⚠️ Missing Items Alert: ${missingNum} item(s) are missing from your laundry. Contact counter.`);
+        await sendNotification(studentRecord.uid, `⚠️ Missing Items Alert: ${missingNum} item(s) are missing from your laundry. Contact counter.`);
         toast.error(`⚠️ ${missingNum} item(s) missing — report auto-filed!`);
       } else {
         updatePayload.missingItemReported = false;
@@ -228,7 +228,7 @@ const QRScannerModal = ({ isOpen, onClose }) => {
 
       // Send Notification
       await sendNotification(
-        studentRecord.phone, 
+        studentRecord.uid, 
         `✅ Your laundry has been received! Token: ${autoToken}. Track status in the SmartDhobi app.`
       );
 

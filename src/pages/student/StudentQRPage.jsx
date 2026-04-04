@@ -61,7 +61,7 @@ const StudentQRPage = () => {
         </div>
 
         {/* Bottom Navigation */}
-        <div className="fixed bottom-0 w-full max-w-[420px] bg-slate-900 border-t border-slate-800 px-6 py-3 flex justify-between items-center z-20 pb-safe">
+        <div className="fixed bottom-0 w-full max-w-[420px] bg-slate-900 border-t border-slate-800 px-4 py-3 flex justify-between items-center z-20 pb-safe">
           <Link to="/student/dashboard" className="flex flex-col items-center text-slate-400 hover:text-teal-400 transition-colors">
              <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"></path></svg>
              <span className="text-[10px] font-medium mt-1">Home</span>
@@ -75,6 +75,10 @@ const StudentQRPage = () => {
           <Link to="/student/history" className="flex flex-col items-center text-slate-400 hover:text-teal-400 transition-colors">
              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
              <span className="text-[10px] font-medium mt-1">History</span>
+          </Link>
+          <Link to="/student/lost-and-found" className="flex flex-col items-center text-slate-400 hover:text-teal-400 transition-colors">
+             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"></path></svg>
+             <span className="text-[10px] font-medium mt-1">Lost & Found</span>
           </Link>
         </div>
       </div>

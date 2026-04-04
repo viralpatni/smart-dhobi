@@ -159,7 +159,7 @@ const StudentHistory = () => {
         </div>
 
         {/* Bottom Navigation */}
-        <div className="fixed bottom-0 w-full max-w-[420px] bg-white border-t border-slate-200 px-6 py-3 flex justify-between items-center z-20 pb-safe">
+        <div className="fixed bottom-0 w-full max-w-[420px] bg-white border-t border-slate-200 px-4 py-3 flex justify-between items-center z-20 pb-safe">
           <Link to="/student/dashboard" className="flex flex-col items-center text-slate-400 hover:text-teal-600 transition-colors">
              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
              <span className="text-[10px] font-medium mt-1">Home</span>
@@ -173,6 +173,10 @@ const StudentHistory = () => {
           <Link to="/student/history" className="flex flex-col items-center text-teal-600">
              <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd"></path></svg>
              <span className="text-[10px] font-medium mt-1">History</span>
+          </Link>
+          <Link to="/student/lost-and-found" className="flex flex-col items-center text-slate-400 hover:text-teal-600 transition-colors">
+             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"></path></svg>
+             <span className="text-[10px] font-medium mt-1">Lost & Found</span>
           </Link>
         </div>
       </div>

@@ -19,6 +19,7 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
     if (userRole === 'student') return <Navigate to="/student/dashboard" replace />;
     if (userRole === 'staff') return <Navigate to="/dhobi/dashboard" replace />;
     if (userRole === 'admin') return <Navigate to="/admin/dashboard" replace />;
+    if (userRole === 'paidStaff') return <Navigate to="/paid-dhobi/dashboard" replace />;
     return <Navigate to="/login" replace />;
   }
 

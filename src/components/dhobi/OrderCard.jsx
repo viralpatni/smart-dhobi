@@ -9,9 +9,12 @@ import toast from 'react-hot-toast';
 const OrderCard = ({ order, onAssignRack }) => {
   const [loading, setLoading] = useState(false);
   const [showRecount, setShowRecount] = useState(false);
-  const [verifiedCount, setVerifiedCount] = useState(order.verifiedCount || order.clothesCount || '');
+  const [verifiedCount, setVerifiedCount] = useState(order?.declaredCount || '');
   const [showReturnCount, setShowReturnCount] = useState(false);
   const [returnCount, setReturnCount] = useState('');
+
+  const effectiveCount = order?.verifiedCount || order?.clothesCount || 0;
+  const hasCountMismatch = order?.declaredCount && order?.verifiedCount && order.declaredCount !== order.verifiedCount;
 
   const updateStatus = async (newStatus) => {
     setLoading(true);
@@ -58,7 +61,7 @@ const OrderCard = ({ order, onAssignRack }) => {
 
         // Send silent notification to student
         await sendNotification(
-          order.studentPhone,
+          order.studentId,
           `📋 Count Update: Your laundry order (${order.tokenId}) count was updated from ${order.declaredCount} to ${newCount} by staff. If this is incorrect, check your app within 2 hours to dispute.`
         );
 
@@ -125,7 +128,7 @@ const OrderCard = ({ order, onAssignRack }) => {
 
         // Notify student about missing items
         await sendNotification(
-          order.studentPhone,
+          order.studentId,
           `⚠️ Missing Items Alert: ${missingNum} item(s) are missing from your laundry (${order.tokenId}). Verified count: ${verifiedNum}, items returned: ${returnNum}. Please contact the laundry counter.`
         );
 
@@ -164,8 +167,7 @@ const OrderCard = ({ order, onAssignRack }) => {
     }
   };
 
-  const effectiveCount = order.verifiedCount || order.clothesCount || 0;
-  const hasCountMismatch = order.declaredCount && order.verifiedCount && order.declaredCount !== order.verifiedCount;
+  // Removed effectiveCount and hasCountMismatch
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow mb-3">
@@ -192,18 +194,6 @@ const OrderCard = ({ order, onAssignRack }) => {
           <span className="block text-xs text-slate-400">Room</span>
           <span className="font-medium">{order.studentRoom}</span>
         </div>
-        {effectiveCount > 0 && (
-          <div>
-            <span className="block text-xs text-slate-400">Items</span>
-            <span className="font-medium">{effectiveCount}</span>
-          </div>
-        )}
-        {order.declaredCount > 0 && order.verifiedCount && order.verifiedCount !== order.declaredCount && (
-          <div>
-            <span className="block text-xs text-slate-400">Declared</span>
-            <span className="font-medium text-amber-600 line-through">{order.declaredCount}</span>
-          </div>
-        )}
         {order.dropOffTime && (
           <div className="flex-1 text-right">
             <span className="block text-xs text-slate-400">Time</span>
@@ -212,18 +202,7 @@ const OrderCard = ({ order, onAssignRack }) => {
         )}
       </div>
 
-      {/* Bundle Photo Thumbnail */}
-      {order.bundlePhotoUrl && (
-        <div className="mt-3">
-          <img
-            src={order.bundlePhotoUrl}
-            alt="Bundle"
-            className="w-full h-20 object-cover rounded-lg border border-slate-200 cursor-pointer hover:opacity-90 transition-opacity"
-            onClick={() => window.open(order.bundlePhotoUrl, '_blank')}
-            title="Click to view full size"
-          />
-        </div>
-      )}
+      {/* Removed bundle photo thumbnail */}
 
       {/* Count mismatch indicator */}
       {hasCountMismatch && (

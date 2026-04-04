@@ -1,0 +1,4 @@
+export const generatePaidToken = () => {
+  const randomDigits = Math.floor(1000 + Math.random() * 9000);
+  return `PD-${randomDigits}`;
+};

@@ -6,6 +6,7 @@ import { collection, query, getDocs } from 'firebase/firestore';
 import Loader from '../../components/common/Loader';
 import { seedFirestore } from '../../utils/seedData';
 import toast from 'react-hot-toast';
+import AdminComplaintsPage from './AdminComplaintsPage';
 
 const AdminDashboard = () => {
   const { userData } = useAuth();
@@ -70,6 +71,11 @@ const AdminDashboard = () => {
             User Management
           </button>
           
+          <button onClick={() => setActiveTab('complaints')} className={`px-6 py-3 flex items-center gap-3 transition-colors text-left ${activeTab==='complaints' ? 'bg-white/10 border-l-4 border-red-400 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+            Feedbacks & Complaints
+          </button>
+          
           {import.meta.env.DEV && (
             <div className="absolute bottom-6 left-6 right-6">
               <button onClick={handleSeedData} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded shadow text-sm font-medium transition-colors">
@@ -100,7 +106,8 @@ const AdminDashboard = () => {
 
         {/* Content Body */}
         <div className="flex-1 overflow-auto p-4 md:p-8 bg-slate-50">
-          <div className="max-w-[1200px] mx-auto space-y-8">
+          {activeTab === 'users' && (
+            <div className="max-w-[1200px] mx-auto space-y-8">
 
             {/* Quick Stats */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -190,7 +197,11 @@ const AdminDashboard = () => {
               </>
             )}
 
-          </div>
+            </div>
+          )}
+          {activeTab === 'complaints' && (
+            <AdminComplaintsPage />
+          )}
         </div>
       </div>
     </div>

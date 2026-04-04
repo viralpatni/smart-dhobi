@@ -3,16 +3,23 @@ import { PieChart, Pie, Tooltip, ResponsiveContainer, Cell, Legend } from 'recha
 
 const COLORS = ['#0D9488', '#F59E0B', '#3B82F6', '#EC4899', '#8B5CF6', '#14B8A6'];
 
-const AnalyticsPanel = ({ analytics }) => {
+const AnalyticsPanel = ({ analytics, activeOrders = [] }) => {
   if (!analytics) return null;
 
   const pending = analytics.totalDropOffs - analytics.totalCollected;
   
-  // Format data for chart
-  const data = Object.keys(analytics.hourlyDropOffs).map(hour => ({
-    name: `${hour}:00`,
-    dropOffs: analytics.hourlyDropOffs[hour]
-  }));
+  // Daily calculation for mainly 3 categories
+  const processingCount = activeOrders.filter(o => ['onTheWay', 'droppedOff', 'washing'].includes(o.status)).length;
+  const washedCount = activeOrders.filter(o => o.status === 'readyInRack').length;
+  const collectedCount = analytics.totalCollected || 0;
+
+  const rawData = [
+    { name: 'Total Drop-offs', value: processingCount },
+    { name: 'Total Washed', value: washedCount },
+    { name: 'Total Washed and Collected', value: collectedCount }
+  ];
+  
+  const data = rawData.filter(d => d.value > 0);
 
   return (
     <div className="space-y-6">
@@ -59,7 +66,7 @@ const AnalyticsPanel = ({ analytics }) => {
       </div>
 
       <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-        <h3 className="font-bold text-gray-800 mb-6">Drop-off Activity Today (Hourly)</h3>
+        <h3 className="font-bold text-gray-800 mb-6">Daily Order Distribution</h3>
         <div className="h-[280px] w-full">
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
@@ -70,7 +77,7 @@ const AnalyticsPanel = ({ analytics }) => {
                 innerRadius={60}
                 outerRadius={90}
                 paddingAngle={5}
-                dataKey="dropOffs"
+                dataKey="value"
               >
                 {data.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />

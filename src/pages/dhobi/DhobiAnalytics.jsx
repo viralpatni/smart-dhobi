@@ -8,14 +8,16 @@ import AnalyticsPanel from '../../components/dhobi/AnalyticsPanel';
 import Loader from '../../components/common/Loader';
 import { formatStandardDate } from '../../utils/formatDate';
 import { useTodayAnalytics } from '../../hooks/useAnalytics';
+import { useAllActiveOrders } from '../../hooks/useOrders';
 import StatusBadge from '../../components/common/StatusBadge';
 
 const DhobiAnalytics = () => {
   const { userData } = useAuth();
   const navigate = useNavigate();
   const { analytics, loading: analyticsLoading } = useTodayAnalytics();
+  const { orders: activeOrders, loading: ordersLoadingActive } = useAllActiveOrders();
   const [recentOrders, setRecentOrders] = useState([]);
-  const [ordersLoading, setOrdersLoading] = useState(true);
+  const [recentOrdersLoading, setRecentOrdersLoading] = useState(true);
 
   useEffect(() => {
     const fetchRecent = async () => {
@@ -26,7 +28,7 @@ const DhobiAnalytics = () => {
       } catch (e) {
         console.error(e);
       } finally {
-        setOrdersLoading(false);
+        setRecentOrdersLoading(false);
       }
     };
     fetchRecent();
@@ -37,7 +39,7 @@ const DhobiAnalytics = () => {
     navigate('/login');
   };
 
-  if (analyticsLoading || ordersLoading) return <Loader fullScreen />;
+  if (analyticsLoading || recentOrdersLoading || ordersLoadingActive) return <Loader fullScreen />;
 
   return (
     <div className="flex h-screen bg-slate-100 overflow-hidden">
@@ -56,6 +58,10 @@ const DhobiAnalytics = () => {
           <NavLink to="/dhobi/analytics" className={({isActive}) => `px-6 py-3 flex items-center gap-3 transition-colors ${isActive ? 'bg-white/10 border-l-4 border-teal-400 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
             Analytics
+          </NavLink>
+          <NavLink to="/dhobi/lost-and-found" className={({isActive}) => `px-6 py-3 flex items-center gap-3 transition-colors ${isActive ? 'bg-white/10 border-l-4 border-teal-400 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"></path></svg>
+            Lost & Found
           </NavLink>
         </div>
         
@@ -94,7 +100,7 @@ const DhobiAnalytics = () => {
         {/* Content Body */}
         <div className="flex-1 overflow-auto p-4 md:p-8 bg-slate-50">
           <div className="max-w-[1200px] mx-auto space-y-6">
-            <AnalyticsPanel analytics={analytics} />
+            <AnalyticsPanel analytics={analytics} activeOrders={activeOrders} />
 
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mt-8">
               <div className="p-5 border-b border-slate-200 flex justify-between items-center bg-slate-50">

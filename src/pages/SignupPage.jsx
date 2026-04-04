@@ -29,6 +29,11 @@ const SignupPage = () => {
     return mobileRegex.test(mobile);
   };
 
+  const validateStudentId = (id) => {
+    const idRegex = /^[0-9]{2}[a-zA-Z]{3}[0-9]{4}$/;
+    return idRegex.test(id);
+  };
+
   const checkUniqueId = async (id, currentRole) => {
     const q = query(collection(db, 'users'), where('uniqueId', '==', id), where('role', '==', currentRole));
     const querySnapshot = await getDocs(q);
@@ -45,6 +50,11 @@ const SignupPage = () => {
 
     if (!validateMobile(formData.mobile)) {
       toast.error('Please enter a valid 10-digit mobile number.');
+      return;
+    }
+
+    if (role === 'student' && !validateStudentId(formData.uniqueId)) {
+      toast.error('Registration ID must be in the format e.g. 22BCE1789');
       return;
     }
 
@@ -168,8 +178,8 @@ const SignupPage = () => {
                 required
                 value={formData.uniqueId}
                 onChange={handleChange}
-                className="w-full border border-slate-300 bg-slate-50 py-2.5 px-3 rounded-lg text-gray-900 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
-                placeholder={role === 'student' ? 'e.g., 2024CS001' : 'e.g., DHB-042'}
+                className="w-full border border-slate-300 bg-slate-50 py-2.5 px-3 rounded-lg text-gray-900 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 uppercase"
+                placeholder={role === 'student' ? 'e.g., 22BCE1789' : 'e.g., DHB-042'}
               />
             </div>
 

@@ -1,18 +1,25 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useStudentOrder } from '../../hooks/useOrders';
 import { useStudentSchedule } from '../../hooks/useSchedule';
+import { useNotifications } from '../../hooks/useNotifications';
 import LiveStatusTracker from '../../components/student/LiveStatusTracker';
 import OnMyWayButton from '../../components/student/OnMyWayButton';
 import { Link, useNavigate } from 'react-router-dom';
 import { auth } from '../../firebase';
 import Loader from '../../components/common/Loader';
+import ModeSwitcher from '../../components/student/ModeSwitcher';
+import PaidDashboard from '../../components/student/PaidDashboard';
 
 const StudentDashboard = () => {
   const { userData, currentUser } = useAuth();
   const navigate = useNavigate();
+  const [activeMode, setActiveMode] = useState('free');
   const { order, loading: orderLoading } = useStudentOrder(currentUser?.uid);
   const { schedule, allMyDates, monthName, loading: scheduleLoading } = useStudentSchedule(currentUser?.uid);
+
+  // Listen to new real-time notifications
+  useNotifications(currentUser?.uid);
 
   const handleLogout = () => {
     auth.signOut();
@@ -61,7 +68,11 @@ const StudentDashboard = () => {
         {/* Main Content Area */}
         <div className="px-6 pt-24 pb-6">
           
-          {/* Today's Slot Card */}
+          <ModeSwitcher activeMode={activeMode} setActiveMode={setActiveMode} />
+
+          {/* ────── FREE LAUNDRY UI ────── */}
+          <div style={{ display: activeMode === 'free' ? 'block' : 'none' }}>
+            {/* Today's Slot Card */}
           <div className={`rounded-2xl p-5 text-white mb-6 shadow-md relative overflow-hidden ${schedule ? 'bg-gradient-to-br from-teal-600 to-teal-500 shadow-teal-500/20' : 'bg-gradient-to-br from-slate-600 to-slate-500 shadow-slate-500/20'}`}>
              <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-10 -mt-10 blur-xl"></div>
              
@@ -181,11 +192,15 @@ const StudentDashboard = () => {
               <p className="text-sm text-amber-600 mt-1">Your Dhobi hasn't uploaded this month's schedule. Check back soon!</p>
             </div>
           )}
+          </div>
+
+          {/* ────── PAID LAUNDRY UI ────── */}
+          {activeMode === 'paid' && <PaidDashboard />}
 
         </div>
 
         {/* Bottom Navigation */}
-        <div className="fixed bottom-0 w-full max-w-[420px] bg-white border-t border-slate-200 px-6 py-3 flex justify-between items-center z-20 pb-safe">
+        <div className="fixed bottom-0 w-full max-w-[420px] bg-white border-t border-slate-200 px-4 py-3 flex justify-between items-center z-20 pb-safe">
           <Link to="/student/dashboard" className="flex flex-col items-center text-teal-600">
              <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"></path></svg>
              <span className="text-[10px] font-medium mt-1">Home</span>
@@ -199,6 +214,14 @@ const StudentDashboard = () => {
           <Link to="/student/history" className="flex flex-col items-center text-slate-400 hover:text-teal-600 transition-colors">
              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
              <span className="text-[10px] font-medium mt-1">History</span>
+          </Link>
+          <Link to="/student/lost-and-found" className="flex flex-col items-center text-slate-400 hover:text-teal-600 transition-colors">
+             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"></path></svg>
+             <span className="text-[10px] font-medium mt-1">Lost</span>
+          </Link>
+          <Link to="/student/feedback" className="flex flex-col items-center text-slate-400 hover:text-teal-600 transition-colors">
+             <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd"></path></svg>
+             <span className="text-[10px] font-medium mt-1">Feedback</span>
           </Link>
         </div>
 

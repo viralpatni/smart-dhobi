@@ -33,8 +33,8 @@ const LoginPage = () => {
       try {
         userCredential = await signInWithEmailAndPassword(auth, formattedEmail, password);
       } catch (authErr) {
-        // Only auto-create for the 3 built-in demo accounts
-        const isDemoAccount = ['student@smartdhobi.com', 'dhobi@smartdhobi.com', 'admin@smartdhobi.com'].includes(formattedEmail);
+        // Only auto-create for the 4 built-in demo accounts
+        const isDemoAccount = ['student@smartdhobi.com', 'dhobi@smartdhobi.com', 'admin@smartdhobi.com', 'paidstaff@smartdhobi.com'].includes(formattedEmail);
         if (isDemoAccount && authErr.code === 'auth/user-not-found') {
           userCredential = await createUserWithEmailAndPassword(auth, formattedEmail, password);
         } else {
@@ -51,10 +51,10 @@ const LoginPage = () => {
       if (userDoc.exists()) {
         uRole = userDoc.data().role;
       } else {
-        // Provision the Firestore document for newly created demo users
         if (formattedEmail.includes('student')) uRole = 'student';
         else if (formattedEmail.includes('dhobi')) uRole = 'staff';
         else if (formattedEmail.includes('admin')) uRole = 'admin';
+        else if (formattedEmail.includes('paidstaff')) uRole = 'paidStaff';
 
         await setDoc(userDocRef, {
           uid: user.uid,
@@ -73,6 +73,7 @@ const LoginPage = () => {
       if (uRole === 'student') navigate('/student/dashboard');
       else if (uRole === 'staff') navigate('/dhobi/dashboard');
       else if (uRole === 'admin') navigate('/admin/dashboard');
+      else if (uRole === 'paidStaff') navigate('/paid-dhobi/dashboard');
 
     } catch (error) {
       console.error('Login error:', error.code, error.message);
@@ -107,6 +108,10 @@ const LoginPage = () => {
     } else if (demoRole === 'admin') {
       demoEmail = import.meta.env.VITE_DEMO_ADMIN_EMAIL || 'admin@smartdhobi.com';
       demoPass = import.meta.env.VITE_DEMO_ADMIN_PASSWORD || 'demo1234';
+    } else if (demoRole === 'paidStaff') {
+      demoEmail = import.meta.env.VITE_DEMO_PAID_DHOBI_EMAIL || 'paidstaff@smartdhobi.com';
+      demoPass = import.meta.env.VITE_DEMO_PAID_DHOBI_PASSWORD || 'demo1234';
+      setRole('paidStaff');
     }
     
     setEmail(demoEmail);
@@ -143,6 +148,12 @@ const LoginPage = () => {
             onClick={() => setRole('staff')}
           >
             Dhobi Staff
+          </button>
+          <button 
+            className={`flex-1 py-4 text-sm font-bold transition-colors ${role === 'paidStaff' ? 'text-amber-500 border-b-2 border-amber-500 bg-white' : 'text-slate-500 hover:text-slate-700'}`}
+            onClick={() => setRole('paidStaff')}
+          >
+            Paid Laundry
           </button>
         </div>
 
@@ -212,14 +223,17 @@ const LoginPage = () => {
 
       <div className="mt-10 bg-white/50 backdrop-blur border border-slate-200 rounded-xl p-4 shadow-sm w-full max-w-md text-center">
         <p className="text-xs text-slate-500 uppercase tracking-wider font-bold mb-3">1-Click Demo Login</p>
-        <div className="grid grid-cols-3 gap-2">
-          <button onClick={() => handleDemoLogin('student')} className="text-xs bg-white hover:bg-slate-50 border border-slate-200 py-2 rounded-lg font-medium text-slate-700 shadow-sm transition-colors">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <button onClick={() => handleDemoLogin('student')} className="text-[10px] bg-white hover:bg-slate-50 border border-slate-200 py-2 px-1 rounded-lg font-medium text-slate-700 shadow-sm transition-colors">
             🙋‍♂️ Student
           </button>
-          <button onClick={() => handleDemoLogin('staff')} className="text-xs bg-white hover:bg-slate-50 border border-slate-200 py-2 rounded-lg font-medium text-teal-700 shadow-sm transition-colors">
+          <button onClick={() => handleDemoLogin('staff')} className="text-[10px] bg-white hover:bg-slate-50 border border-slate-200 py-2 px-1 rounded-lg font-medium text-teal-700 shadow-sm transition-colors">
             👔 Staff
           </button>
-          <button onClick={() => handleDemoLogin('admin')} className="text-xs bg-white hover:bg-slate-50 border border-indigo-200 py-2 rounded-lg font-medium text-indigo-700 shadow-sm transition-colors">
+          <button onClick={() => handleDemoLogin('paidStaff')} className="text-[10px] bg-white hover:bg-slate-50 border border-amber-200 py-2 px-1 rounded-lg font-medium text-amber-700 shadow-sm transition-colors">
+            🧺 Paid Staff
+          </button>
+          <button onClick={() => handleDemoLogin('admin')} className="text-[10px] bg-white hover:bg-slate-50 border border-indigo-200 py-2 px-1 rounded-lg font-medium text-indigo-700 shadow-sm transition-colors">
             👑 Admin
           </button>
         </div>
