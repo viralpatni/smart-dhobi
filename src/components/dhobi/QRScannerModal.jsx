@@ -13,6 +13,7 @@ const QRScannerModal = ({ isOpen, onClose }) => {
   const [activeOrder, setActiveOrder] = useState(null);
   const [loading, setLoading] = useState(false);
   const [successToken, setSuccessToken] = useState(null);
+  const [returnCount, setReturnCount] = useState('');
   
   const { currentUser } = useAuth();
 
@@ -73,15 +74,13 @@ const QRScannerModal = ({ isOpen, onClose }) => {
         return;
       }
 
-      // 2. Fetch the student's active "onTheWay" order (which has clothes count + photo)
-      const q = query(
-        collection(db, 'orders'),
-        where('studentId', '==', uid),
-        where('status', '==', 'onTheWay')
-      );
+      // 2. Fetch the student's active order
+      const q = query(collection(db, 'orders'), where('studentId', '==', uid));
       const orderSnap = await getDocs(q);
-      if (!orderSnap.empty) {
-        setActiveOrder({ id: orderSnap.docs[0].id, ...orderSnap.docs[0].data() });
+      const active = orderSnap.docs.find(d => ['onTheWay', 'readyInRack'].includes(d.data().status));
+      
+      if (active) {
+        setActiveOrder({ id: active.id, ...active.data() });
       } else {
         setActiveOrder(null);
       }
@@ -98,6 +97,60 @@ const QRScannerModal = ({ isOpen, onClose }) => {
     setStudentRecord(null);
     setActiveOrder(null);
     setSuccessToken(null);
+    setReturnCount('');
+  };
+
+  const handleMarkCollected = async () => {
+    const returnNum = parseInt(returnCount, 10);
+    if (isNaN(returnNum) || returnNum < 0) {
+      toast.error('Enter a valid return count');
+      return;
+    }
+
+    const verifiedNum = activeOrder.verifiedCount || activeOrder.clothesCount || 0;
+    setLoading(true);
+    try {
+      const orderRef = doc(db, 'orders', activeOrder.id);
+      const updatePayload = {
+        status: 'collected',
+        collectedTime: new Date(),
+        returnCount: returnNum,
+      };
+
+      if (returnNum < verifiedNum) {
+        const missingNum = verifiedNum - returnNum;
+        updatePayload.missingItemReported = true;
+        updatePayload.missingCount = missingNum;
+        updatePayload.missingItemDesc = `Auto-detected: ${missingNum} item(s) missing. Checked by scanner.`;
+        
+        await updateDoc(orderRef, updatePayload);
+
+        const today = new Date().toISOString().split('T')[0];
+        const analyticsRef = doc(db, 'analytics', today);
+        const analyticsSnap = await getDoc(analyticsRef);
+        if (analyticsSnap.exists()) {
+          await updateDoc(analyticsRef, { totalMissingReports: increment(1) });
+        }
+        await sendNotification(studentRecord.phone, `⚠️ Missing Items Alert: ${missingNum} item(s) are missing from your laundry. Contact counter.`);
+        toast.error(`⚠️ ${missingNum} item(s) missing — report auto-filed!`);
+      } else {
+        updatePayload.missingItemReported = false;
+        updatePayload.missingCount = 0;
+        await updateDoc(orderRef, updatePayload);
+        toast.success('Order collected — all items accounted for ✓');
+      }
+
+      setSuccessToken('COLLECTED');
+      setTimeout(() => {
+        onClose();
+        resetScanner();
+      }, 2500);
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to mark collected');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Zone 2: One-tap Accept & Generate Token
@@ -218,11 +271,17 @@ const QRScannerModal = ({ isOpen, onClose }) => {
               <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
                 <svg className="w-10 h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
               </div>
-              <h4 className="text-2xl font-bold text-gray-800 mb-2">Drop-Off Confirmed!</h4>
+              <h4 className="text-2xl font-bold text-gray-800 mb-2">
+                {successToken === 'COLLECTED' ? 'Ready for Collection!' : 'Drop-Off Confirmed!'}
+              </h4>
               <div className="bg-slate-100 py-3 px-6 rounded-lg inline-block">
-                <span className="font-mono text-3xl font-bold text-teal-600 tracking-wider">{successToken}</span>
+                <span className="font-mono text-3xl font-bold text-teal-600 tracking-wider">
+                  {successToken === 'COLLECTED' ? 'DONE' : successToken}
+                </span>
               </div>
-              <p className="text-sm text-slate-500 mt-3">Auto-generated token • Student notified</p>
+              <p className="text-sm text-slate-500 mt-3">
+                {successToken === 'COLLECTED' ? 'Student notified' : 'Auto-generated token • Student notified'}
+              </p>
             </div>
           ) : !scannedUid ? (
             <>
@@ -273,7 +332,7 @@ const QRScannerModal = ({ isOpen, onClose }) => {
               </div>
 
               {/* Bundle Photo Preview (Zone 2 — Dhobi sees declared photo) */}
-              {activeOrder?.bundlePhotoUrl && (
+              {activeOrder?.bundlePhotoUrl && activeOrder.status !== 'readyInRack' && (
                 <div className="mb-5 rounded-xl overflow-hidden border border-slate-200 shadow-sm">
                   <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex items-center gap-2">
                     <span className="text-sm">📸</span>
@@ -288,7 +347,14 @@ const QRScannerModal = ({ isOpen, onClose }) => {
               )}
 
               {/* Status indicator */}
-              {activeOrder ? (
+              {activeOrder?.status === 'readyInRack' ? (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-5 text-sm text-blue-700">
+                  <div className="font-bold flex items-center gap-2 mb-2">
+                    <span className="text-lg">📦</span> Laundry Ready for Collection
+                  </div>
+                  <p>Rack No: <strong>{activeOrder.rackNo}</strong> • Target Items: <strong>{activeOrder.verifiedCount || activeOrder.clothesCount}</strong></p>
+                </div>
+              ) : activeOrder ? (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-5 flex items-center gap-2 text-sm text-green-700 font-medium">
                   <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"></path></svg>
                   Student notified via app — {activeOrder.clothesCount} items declared
@@ -299,29 +365,52 @@ const QRScannerModal = ({ isOpen, onClose }) => {
                 </div>
               )}
 
-              {/* Zone 2: Single Big Button — Accept & Generate Token */}
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={handleClose}
-                  className="flex-1 py-3.5 px-4 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 font-medium transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleAcceptAndGenerate}
-                  disabled={loading}
-                  className="flex-[2] py-3.5 px-4 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white rounded-xl font-bold flex justify-center items-center shadow-lg shadow-teal-600/30 transition-all active:scale-[0.98] text-base gap-2"
-                >
-                  {loading ? (
-                    <div className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
-                  ) : (
-                    <>
-                      <span>✅</span> Accept & Generate Token
-                    </>
-                  )}
-                </button>
-              </div>
+              {/* Actions */}
+              {activeOrder?.status === 'readyInRack' ? (
+                <div className="space-y-3">
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      min="0"
+                      value={returnCount}
+                      onChange={(e) => setReturnCount(e.target.value)}
+                      className="flex-[2] border-2 border-slate-300 rounded-xl p-3 text-center text-xl font-bold font-mono focus:outline-none focus:border-slate-500 text-gray-800 bg-white"
+                      placeholder="Return items"
+                    />
+                    <button
+                      onClick={handleMarkCollected}
+                      disabled={loading}
+                      className="flex-[3] bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold flex justify-center items-center gap-2 transition-all active:scale-[0.98]"
+                    >
+                      {loading ? '...' : '✅ Mark Collected'}
+                    </button>
+                  </div>
+                  <button onClick={handleClose} className="w-full py-2 text-slate-500 text-sm font-medium hover:text-slate-700 transition-colors">Cancel</button>
+                </div>
+              ) : (
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={handleClose}
+                    className="flex-1 py-3.5 px-4 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 font-medium transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleAcceptAndGenerate}
+                    disabled={loading}
+                    className="flex-[2] py-3.5 px-4 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white rounded-xl font-bold flex justify-center items-center shadow-lg shadow-teal-600/30 transition-all active:scale-[0.98] text-base gap-2"
+                  >
+                    {loading ? (
+                      <div className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
+                    ) : (
+                      <>
+                        <span>✅</span> Accept & Generate Token
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
           ) : null}
         </div>

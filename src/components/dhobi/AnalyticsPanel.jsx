@@ -1,5 +1,7 @@
 import React from 'react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { PieChart, Pie, Tooltip, ResponsiveContainer, Cell, Legend } from 'recharts';
+
+const COLORS = ['#0D9488', '#F59E0B', '#3B82F6', '#EC4899', '#8B5CF6', '#14B8A6'];
 
 const AnalyticsPanel = ({ analytics }) => {
   if (!analytics) return null;
@@ -11,9 +13,6 @@ const AnalyticsPanel = ({ analytics }) => {
     name: `${hour}:00`,
     dropOffs: analytics.hourlyDropOffs[hour]
   }));
-
-  // Find max for highlighting
-  const maxDropOffs = Math.max(...data.map(d => d.dropOffs));
 
   return (
     <div className="space-y-6">
@@ -63,22 +62,25 @@ const AnalyticsPanel = ({ analytics }) => {
         <h3 className="font-bold text-gray-800 mb-6">Drop-off Activity Today (Hourly)</h3>
         <div className="h-[280px] w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748B' }} />
-              <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748B' }} />
+            <PieChart>
+              <Pie
+                data={data}
+                cx="50%"
+                cy="50%"
+                innerRadius={60}
+                outerRadius={90}
+                paddingAngle={5}
+                dataKey="dropOffs"
+              >
+                {data.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                ))}
+              </Pie>
               <Tooltip 
-                cursor={{ fill: '#F1F5F9' }}
                 contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
               />
-              <Bar dataKey="dropOffs" radius={[4, 4, 0, 0]}>
-                {data.map((entry, index) => (
-                  <Cell 
-                    key={`cell-${index}`} 
-                    fill={entry.dropOffs === maxDropOffs && maxDropOffs > 0 ? '#F59E0B' : '#0D9488'} 
-                  />
-                ))}
-              </Bar>
-            </BarChart>
+              <Legend verticalAlign="bottom" height={36} />
+            </PieChart>
           </ResponsiveContainer>
         </div>
       </div>

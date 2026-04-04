@@ -21,7 +21,13 @@ const StudentDashboard = () => {
 
   if (orderLoading || scheduleLoading) return <Loader fullScreen />;
 
-  const hasActiveOrder = order && order.status !== 'collected';
+  const isRecentCollected = order && order.status === 'collected' && (() => {
+    if (!order.collectedTime) return false;
+    const collectedAt = order.collectedTime.toDate ? order.collectedTime.toDate() : new Date(order.collectedTime);
+    return (new Date() - collectedAt) < 12 * 60 * 60 * 1000; // 12 hours
+  })();
+
+  const hasActiveOrder = order && (order.status !== 'collected' || isRecentCollected);
 
   const upcomingDates = allMyDates.filter(d => d.isFuture);
   const pastDates = allMyDates.filter(d => d.isPast);
