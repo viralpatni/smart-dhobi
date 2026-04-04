@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { supabase } from '../../supabase';
 import Loader from '../common/Loader';
 import toast from 'react-hot-toast';
 
@@ -31,9 +30,14 @@ const QRScanPickupModal = ({ isOpen, onClose, onConfirm, expectedItems }) => {
       setScannedUid(decodedText);
       setLoading(true);
       try {
-        const userDoc = await getDoc(doc(db, 'users', decodedText));
-        if (userDoc.exists()) {
-          setStudentInfo({ uid: userDoc.id, ...userDoc.data() });
+        const { data, error } = await supabase.from('users').select('*').eq('id', decodedText).single();
+        if (data) {
+          setStudentInfo({ 
+             uid: data.id, 
+             name: data.name, 
+             hostelBlock: data.hostel_block, 
+             roomNo: data.room_no 
+          });
         } else {
           toast.error("User not found in DB.");
           setScannedUid(null);

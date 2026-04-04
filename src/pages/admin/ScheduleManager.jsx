@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, getDocs, doc, setDoc } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { supabase } from '../../supabase';
 import toast from 'react-hot-toast';
 import { sendNotification } from '../../utils/sendNotification';
 

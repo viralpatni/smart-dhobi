@@ -1,44 +1,71 @@
-import { useEffect } from 'react';
-import { collection, query, where, onSnapshot, doc, updateDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { useState, useEffect } from 'react';
+import { supabase } from '../supabase';
 import toast from 'react-hot-toast';
 
 export const useNotifications = (userId) => {
+  const [notifications, setNotifications] = useState([]);
+  const [loading, setLoading] = useState(true);
+
   useEffect(() => {
-    if (!userId) return;
+    if (!userId) { setLoading(false); return; }
 
-    const notificationsRef = collection(db, 'notifications');
-    const q = query(
-      notificationsRef,
-      where('userId', '==', userId),
-      where('read', '==', false)
-    );
+    const fetchNotifications = async () => {
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('read', false)
+        .order('created_at', { ascending: false });
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      snapshot.docChanges().forEach((change) => {
-        if (change.type === 'added') {
-          const notification = change.doc.data();
-          
-          // Show toast on the student's screen
-          toast(`🔔 Alert\n${notification.message}`, {
-            duration: 8000,
-            style: {
-              background: '#0F172A',
-              color: '#fff',
-              maxWidth: '400px',
-              borderLeft: '4px solid #0EA5E9'
-            }
-          });
+      if (!error) setNotifications((data || []).map(mapNotification));
+      setLoading(false);
+    };
+    fetchNotifications();
 
-          // Mark as read immediately so it doesn't fire again
-          const docRef = doc(db, 'notifications', change.doc.id);
-          updateDoc(docRef, { read: true }).catch(console.error);
-        }
-      });
-    }, (error) => {
-      console.error('Error listening to notifications:', error);
-    });
+    const channel = supabase
+      .channel(`notifications-${userId}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'notifications',
+        filter: `user_id=eq.${userId}`,
+      }, (payload) => {
+        const n = mapNotification(payload.new);
+        setNotifications(prev => [n, ...prev]);
+        toast(n.message, { icon: '🔔', duration: 5000 });
+      })
+      .subscribe();
 
-    return () => unsubscribe();
+    return () => { supabase.removeChannel(channel); };
   }, [userId]);
+
+  const markAsRead = async (notifId) => {
+    await supabase
+      .from('notifications')
+      .update({ read: true })
+      .eq('id', notifId);
+    setNotifications(prev => prev.filter(n => n.id !== notifId));
+  };
+
+  const markAllAsRead = async () => {
+    if (!userId) return;
+    await supabase
+      .from('notifications')
+      .update({ read: true })
+      .eq('user_id', userId)
+      .eq('read', false);
+    setNotifications([]);
+  };
+
+  return { notifications, loading, markAsRead, markAllAsRead };
 };
+
+function mapNotification(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    message: row.message,
+    read: row.read,
+    createdAt: row.created_at,
+  };
+}

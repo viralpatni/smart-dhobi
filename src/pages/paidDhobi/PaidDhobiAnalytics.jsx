@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, orderBy, getDocs } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { supabase } from '../../supabase';
 import Loader from '../../components/common/Loader';
 import { formatStandardDate } from '../../utils/formatDate';
 // Assume recharts is available as per prompt
@@ -13,9 +12,21 @@ const PaidDhobiAnalytics = () => {
   useEffect(() => {
     const fetchOrders = async () => {
       try {
-        const q = query(collection(db, 'paidOrders'), orderBy('createdAt', 'desc'));
-        const snap = await getDocs(q);
-        setOrders(snap.docs.map(d => ({id: d.id, ...d.data()})));
+        const { data, error } = await supabase.from('paid_orders').select('*').order('created_at', { ascending: false });
+        if (data) {
+          setOrders(data.map(d => ({
+            id: d.id,
+            tokenId: d.token_id,
+            studentName: d.student_name,
+            studentRoom: d.student_room,
+            totalAmount: d.total_amount,
+            paymentStatus: d.payment_status,
+            status: d.status,
+            createdAt: d.created_at,
+            items: d.items,
+            paymentCollectedAt: d.payment_collected_at
+          })));
+        }
       } catch (e) {
         console.error(e);
       } finally {
@@ -36,7 +47,7 @@ const PaidDhobiAnalytics = () => {
 
   // "This Week" (last 7 days window for simplicity)
   const thisWeekOrders = orders.filter(o => {
-    const d = new Date(o.createdAt?.toDate());
+    const d = new Date(o.createdAt);
     return d >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   });
 
@@ -50,7 +61,7 @@ const PaidDhobiAnalytics = () => {
     const dailyCollected = orders.filter(o => 
       o.paymentStatus === 'collected' && 
       o.paymentCollectedAt && 
-      new Date(o.paymentCollectedAt.toDate()).toISOString().split('T')[0] === dateStr
+      new Date(o.paymentCollectedAt).toISOString().split('T')[0] === dateStr
     ).reduce((sum, o) => sum + o.totalAmount, 0);
     return { name: dateStr.substring(5), revenue: dailyCollected }; // MM-DD
   });

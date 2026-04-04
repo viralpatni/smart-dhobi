@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { supabase } from '../../supabase';
 import { useAuth } from '../../context/AuthContext';
 import { formatStandardDate } from '../../utils/formatDate';
 import toast from 'react-hot-toast';
@@ -25,13 +24,12 @@ const PricingTable = ({ items }) => {
         return;
       }
       
-      const itemRef = doc(db, 'paidPricing', id);
-      await updateDoc(itemRef, {
-        pricePerPiece: numPrice,
-        isAvailable: editAvailable,
-        lastUpdatedBy: userData.uid,
-        lastUpdatedAt: serverTimestamp()
-      });
+      await supabase.from('paid_pricing').update({
+        price_per_piece: numPrice,
+        is_available: editAvailable,
+        updated_by: userData.id,
+        updated_at: new Date()
+      }).eq('id', id);
       
       toast.success('Price updated — students will see this immediately');
       setEditingId(null);
@@ -44,12 +42,11 @@ const PricingTable = ({ items }) => {
   const handleDeleteClick = async (id) => {
     if (window.confirm("Are you sure you want to remove this item? (It will just be hidden from students)")) {
       try {
-        const itemRef = doc(db, 'paidPricing', id);
-        await updateDoc(itemRef, {
-          isAvailable: false,
-          lastUpdatedBy: userData.uid,
-          lastUpdatedAt: serverTimestamp()
-        });
+        await supabase.from('paid_pricing').update({
+          is_available: false,
+          updated_by: userData.id,
+          updated_at: new Date()
+        }).eq('id', id);
         toast.success('Item removed successfully');
       } catch (err) {
         console.error(err);

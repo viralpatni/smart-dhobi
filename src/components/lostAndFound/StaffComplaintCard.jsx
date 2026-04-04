@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { doc, updateDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { supabase } from '../../supabase';
 import { formatStandardDate } from '../../utils/formatDate';
 import { sendNotification } from '../../utils/sendNotification';
 import LostItemTimeline from './LostItemTimeline';
@@ -49,13 +48,25 @@ const StaffComplaintCard = ({ complaint, dhobiName }) => {
 
   const updateComplaint = async (updates, timelineEvent) => {
     try {
-      const ref = doc(db, 'lostAndFound', complaint.id);
-      await updateDoc(ref, { ...updates, updatedAt: serverTimestamp() });
+      if (updates['notificationLog.itemFound'] !== undefined) {
+         updates.notification_log = { itemFound: true };
+         delete updates['notificationLog.itemFound'];
+      }
+      if (updates.staffNotes !== undefined) { updates.staff_notes = updates.staffNotes; delete updates.staffNotes; }
+      if (updates.foundLocation !== undefined) { updates.found_location = updates.foundLocation; delete updates.foundLocation; }
+      if (updates.resolutionNote !== undefined) { updates.resolution_note = updates.resolutionNote; delete updates.resolutionNote; }
+      if (updates.resolvedAt !== undefined) { updates.resolved_at = new Date(); delete updates.resolvedAt; }
+      
+      updates.updated_at = new Date();
+
+      await supabase.from('lost_items').update(updates).eq('id', complaint.id);
 
       if (timelineEvent) {
-        await addDoc(collection(db, 'lostAndFound', complaint.id, 'timeline'), {
-          ...timelineEvent,
-          timestamp: serverTimestamp()
+        await supabase.from('lost_item_timeline').insert({
+          complaint_id: complaint.id,
+          event: timelineEvent.event,
+          by: timelineEvent.by,
+          note: timelineEvent.note
         });
       }
       return true;
@@ -114,7 +125,7 @@ const StaffComplaintCard = ({ complaint, dhobiName }) => {
         status: 'found',
         foundLocation,
         resolutionNote: foundMessage,
-        resolvedAt: serverTimestamp(),
+        resolvedAt: new Date(),
         'notificationLog.itemFound': true
       },
       { event: `Item found at ${foundLocation}`, by: dhobiName || 'Staff', note: foundMessage }

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { auth } from '../../firebase';
+import { supabase } from '../../supabase';
 import { useAuth } from '../../context/AuthContext';
 import { formatStandardDate } from '../../utils/formatDate';
 
@@ -9,8 +9,8 @@ const PaidDhobiLayout = () => {
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const handleLogout = () => {
-    auth.signOut();
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     navigate('/login');
   };
 

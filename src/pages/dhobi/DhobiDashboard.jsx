@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { auth } from '../../firebase';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { supabase } from '../../supabase';
 import KanbanBoard from '../../components/dhobi/KanbanBoard';
 import QRScannerModal from '../../components/dhobi/QRScannerModal';
 import ScheduleUploader from '../../components/dhobi/ScheduleUploader';
@@ -21,8 +19,8 @@ const DhobiDashboard = () => {
   // Custom incoming alerts
   const incomingAlerts = orders.filter(o => o.status === 'onTheWay');
 
-  const handleLogout = () => {
-    auth.signOut();
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     navigate('/login');
   };
 

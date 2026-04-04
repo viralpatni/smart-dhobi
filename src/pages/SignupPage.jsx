@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { auth, db } from '../firebase';
-import { collection, query, where, getDocs, setDoc, doc } from 'firebase/firestore';
+import { supabase } from '../supabase';
 import { useNavigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
@@ -35,18 +33,16 @@ const SignupPage = () => {
   };
 
   const checkUniqueId = async (id, currentRole) => {
-    const q = query(collection(db, 'users'), where('uniqueId', '==', id), where('role', '==', currentRole));
-    const querySnapshot = await getDocs(q);
-    return querySnapshot.empty; // True if it doesn't exist yet
+    const { data } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('unique_id', id)
+      .eq('role', currentRole);
+    return !data || data.length === 0; // True if it doesn't exist yet
   };
 
   const handleSignup = async (e) => {
     e.preventDefault();
-    
-    if (import.meta.env.VITE_FIREBASE_API_KEY === 'your_firebase_api_key') {
-      toast.error('Firebase is not connected! Please add your Database keys to the .env file.');
-      return;
-    }
 
     if (!validateMobile(formData.mobile)) {
       toast.error('Please enter a valid 10-digit mobile number.');
@@ -74,36 +70,30 @@ const SignupPage = () => {
         return;
       }
 
-      // Automatically generate a dummy email based on ID and role 
-      // since Firebase Auth requires an email, and the prompt implies Mobile-centric login
-      // but we previously built the app using Email/Password auth.
-      // Easiest seamless solution: Construct email behind the scenes mapping Mobile/ID -> Email
       const seamlessEmail = `${formData.uniqueId.toLowerCase().replace(/[^a-z0-9]/g, '')}@smartdhobi.com`;
 
-      const userCredential = await createUserWithEmailAndPassword(auth, seamlessEmail, formData.password);
-      const user = userCredential.user;
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: seamlessEmail,
+        password: formData.password,
+      });
 
-      const userDocRef = doc(db, 'users', user.uid);
-      
-      const provisionedData = {
-        uid: user.uid,
+      if (authError) throw authError;
+      const user = authData.user;
+      if (!user) throw new Error('Signup failed - no user returned');
+
+      const profileData = {
+        id: user.id,
         name: formData.name,
-        email: seamlessEmail, // Keep for backward compatibility with db structure
+        email: seamlessEmail,
         phone: `+91${formData.mobile}`,
         role: role,
-        uniqueId: formData.uniqueId, // Registration ID / Staff ID
-        fcmToken: '',
-        createdAt: new Date()
+        unique_id: formData.uniqueId,
+        hostel_block: role === 'student' ? formData.hostelBlock : '',
+        room_no: role === 'student' ? formData.roomNo : '',
       };
 
-      // Add student specific fields
-      if (role === 'student') {
-        provisionedData.hostelBlock = formData.hostelBlock;
-        provisionedData.roomNo = formData.roomNo;
-        provisionedData.qrCodeData = user.uid; // Generated for counter scanning
-      }
-
-      await setDoc(userDocRef, provisionedData);
+      const { error: profileError } = await supabase.from('profiles').insert(profileData);
+      if (profileError) throw profileError;
 
       toast.success('Registration successful!');
       
@@ -112,11 +102,18 @@ const SignupPage = () => {
       else if (role === 'staff') navigate('/dhobi/dashboard');
 
     } catch (error) {
-      console.error(error);
-      if (error.code === 'auth/email-already-in-use') {
-        toast.error('This ID is already tied to an existing account.');
+      console.error('Signup Full Error:', error);
+      const msg = error.message || '';
+      
+      // If we created the auth user but profile failed, it's usually RLS or a duplicate.
+      // In a real app, you'd want to clean up the auth user or use a Postgres function (RPC) to do both together.
+      
+      if (msg.includes('already registered') || msg.includes('already been registered') || msg.includes('User already registered')) {
+        toast.error('This ID is already tied to an existing account. Try logging in instead.');
+      } else if (msg.includes('unexpected') || msg.includes('Database error')) {
+        toast.error('Server error during profile creation. Please contact support.');
       } else {
-        toast.error('Failed to create account. Please try again.');
+        toast.error(`Signup failed: ${msg || 'Please check your connection and try again.'}`);
       }
     } finally {
       setLoading(false);

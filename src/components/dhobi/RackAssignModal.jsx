@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { doc, updateDoc } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { supabase } from '../../supabase';
 import toast from 'react-hot-toast';
 import { sendNotification } from '../../utils/sendNotification';
 
@@ -19,12 +18,11 @@ const RackAssignModal = ({ isOpen, onClose, order }) => {
 
     setAssigning(true);
     try {
-      const orderRef = doc(db, 'orders', order.id);
-      await updateDoc(orderRef, {
+      await supabase.from('orders').update({
         status: 'readyInRack',
-        rackNo: rackNo.trim(),
-        rackAssignedTime: new Date()
-      });
+        rack_no: rackNo.trim(),
+        rack_assigned_time: new Date()
+      }).eq('id', order.id);
 
       // Send Notification to student
       await sendNotification(

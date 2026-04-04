@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { doc, setDoc, collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { supabase } from '../../supabase';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 
@@ -19,13 +18,14 @@ const OnMyWayButton = ({ scheduleId }) => {
         return;
       }
       try {
-        const q = query(
-          collection(db, 'orders'),
-          where('studentId', '==', currentUser.uid),
-          where('status', '==', 'onTheWay')
-        );
-        const snap = await getDocs(q);
-        if (!snap.empty) {
+        const { data, error } = await supabase
+          .from('orders')
+          .select('id')
+          .eq('student_id', currentUser.uid)
+          .eq('status', 'onTheWay');
+          
+        if (error) throw error;
+        if (data && data.length > 0) {
           setAlreadyNotified(true);
         }
       } catch (e) {
@@ -47,44 +47,45 @@ const OnMyWayButton = ({ scheduleId }) => {
     setLoading(true);
     try {
       // Double-check no duplicate
-      const q = query(
-        collection(db, 'orders'),
-        where('studentId', '==', currentUser.uid),
-        where('status', '==', 'onTheWay')
-      );
-      const existingSnap = await getDocs(q);
-      if (!existingSnap.empty) {
+      const { data: existingData, error: existingError } = await supabase
+        .from('orders')
+        .select('id')
+        .eq('student_id', currentUser.uid)
+        .eq('status', 'onTheWay');
+        
+      if (existingError) throw existingError;
+      
+      if (existingData && existingData.length > 0) {
         setAlreadyNotified(true);
         toast('Staff was already notified!', { icon: 'ℹ️' });
         setLoading(false);
         return;
       }
 
-      const orderRef = doc(collection(db, 'orders'));
-      await setDoc(orderRef, {
-        tokenId: 'PENDING',
-        studentId: currentUser.uid,
-        studentName: userData.name,
-        studentPhone: userData.phone,
-        studentRoom: userData.roomNo,
-        studentBlock: userData.hostelBlock,
-        studentUniqueId: userData.uniqueId || '',
-        dhobiId: '',
+      await supabase.from('orders').insert({
+        token_id: 'PENDING',
+        student_id: currentUser.uid,
+        student_name: userData.name,
+        student_phone: userData.phone,
+        student_room: userData.roomNo,
+        student_block: userData.hostelBlock,
+        student_unique_id: userData.uniqueId || '',
+        dhobi_id: '',
         status: 'onTheWay',
-        dropOffTime: null,
-        rackAssignedTime: null,
-        collectedTime: null,
-        missingItemReported: false,
-        missingItemDesc: '',
-        missingCount: 0,
-        countDisputeStatus: null, // null | 'pending' | 'confirmed' | 'disputed'
-        countDisputeDeadline: null,
-        notificationLog: {
-          dropOffAlert: false,
-          rackReadyAlert: false,
-          countUpdateAlert: false
+        drop_off_time: null,
+        rack_assigned_time: null,
+        collected_time: null,
+        missing_item_reported: false,
+        missing_item_desc: '',
+        missing_count: 0,
+        count_dispute_status: null, // null | 'pending' | 'confirmed' | 'disputed'
+        count_dispute_deadline: null,
+        notification_log: {
+          drop_off_alert: false,
+          rack_ready_alert: false,
+          count_update_alert: false
         },
-        createdAt: new Date()
+        created_at: new Date()
       });
 
       setAlreadyNotified(true);

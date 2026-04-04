@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { doc, updateDoc } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { supabase } from '../../supabase';
 import toast from 'react-hot-toast';const steps = [
   { id: 'scheduled', label: 'Scheduled' },
   { id: 'droppedOff', label: 'Dropped Off' },
@@ -27,10 +26,9 @@ const LiveStatusTracker = ({ currentStatus, rackNo, order }) => {
     if (!order?.id) return;
     setLoading(true);
     try {
-      const orderRef = doc(db, 'orders', order.id);
-      await updateDoc(orderRef, {
-        countDisputeStatus: action
-      });
+      await supabase.from('orders').update({
+        count_dispute_status: action
+      }).eq('id', order.id);
       if (action === 'confirmed') {
         toast.success('Count confirmed.');
       } else {

@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { auth } from '../../firebase';
-import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { supabase } from '../../supabase';
 import AnalyticsPanel from '../../components/dhobi/AnalyticsPanel';
 import Loader from '../../components/common/Loader';
 import { formatStandardDate } from '../../utils/formatDate';
@@ -22,9 +20,22 @@ const DhobiAnalytics = () => {
   useEffect(() => {
     const fetchRecent = async () => {
       try {
-        const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(10));
-        const snap = await getDocs(q);
-        setRecentOrders(snap.docs.map(d => ({id: d.id, ...d.data()})));
+        const { data, error } = await supabase
+          .from('orders')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(10);
+          
+        if (error) throw error;
+        setRecentOrders((data || []).map(row => ({
+          id: row.id,
+          tokenId: row.token_id,
+          studentName: row.student_name,
+          studentRoom: row.student_room,
+          clothesCount: row.clothes_count,
+          createdAt: row.created_at,
+          status: row.status
+        })));
       } catch (e) {
         console.error(e);
       } finally {
@@ -34,8 +45,8 @@ const DhobiAnalytics = () => {
     fetchRecent();
   }, []);
 
-  const handleLogout = () => {
-    auth.signOut();
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     navigate('/login');
   };
 

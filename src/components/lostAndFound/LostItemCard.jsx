@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { doc, updateDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { supabase } from '../../supabase';
 import { formatStandardDate } from '../../utils/formatDate';
 import LostItemTimeline from './LostItemTimeline';
 import toast from 'react-hot-toast';
@@ -29,17 +28,16 @@ const LostItemCard = ({ complaint, currentUserId }) => {
   const handleMarkCollected = async () => {
     setCollecting(true);
     try {
-      const ref = doc(db, 'lostAndFound', complaint.id);
-      await updateDoc(ref, {
+      await supabase.from('lost_items').update({
         status: 'closed',
-        updatedAt: serverTimestamp()
-      });
+        updated_at: new Date()
+      }).eq('id', complaint.id);
 
-      await addDoc(collection(db, 'lostAndFound', complaint.id, 'timeline'), {
+      await supabase.from('lost_item_timeline').insert({
+        complaint_id: complaint.id,
         event: 'Student confirmed collection',
         by: 'student',
         note: 'Item picked up from laundry counter.',
-        timestamp: serverTimestamp()
       });
 
       toast.success('Marked as collected!');

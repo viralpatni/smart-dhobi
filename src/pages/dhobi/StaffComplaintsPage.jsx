@@ -4,7 +4,7 @@ import { useStaffComplaints } from '../../hooks/useComplaints';
 import Loader from '../../components/common/Loader';
 import { Link, useNavigate } from 'react-router-dom';
 import StaffComplaintCard from '../../components/complaints/StaffComplaintCard';
-import { auth } from '../../firebase';
+import { supabase } from '../../supabase';
 
 const StaffComplaintsPage = () => {
   const { userData, currentUser } = useAuth();
@@ -15,8 +15,8 @@ const StaffComplaintsPage = () => {
   const [filterStatus, setFilterStatus] = useState('All');
   const [filterCategory, setFilterCategory] = useState('');
 
-  const handleLogout = () => {
-    auth.signOut();
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     navigate('/login');
   };
 

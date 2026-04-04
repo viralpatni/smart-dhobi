@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { useAllPaidOrders } from '../../hooks/usePaidOrders';
 import { useAuth } from '../../context/AuthContext';
-import { doc, updateDoc, serverTimestamp, increment } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { supabase } from '../../supabase';
 import { sendNotification } from '../../utils/sendNotification';
 import Loader from '../../components/common/Loader';
 import QRScanPickupModal from '../../components/paidDhobi/QRScanPickupModal';
@@ -31,18 +30,17 @@ const PaidDhobiDashboard = () => {
   // Top Stats
   const pickupsToday = pickupQueue.length + orders.filter(o => o.pickupDate === today && o.status !== 'scheduled' && o.status !== 'onTheWay').length;
   const outForDeliveryCount = orders.filter(o => o.status === 'outForDelivery').length;
-  const deliveredTodayCount = orders.filter(o => o.status === 'delivered' && o.deliveredAt && new Date(o.deliveredAt.toDate()).toISOString().split('T')[0] === today).length;
-  const revenueToday = orders.filter(o => o.status === 'delivered' && o.paymentStatus === 'collected' && o.paymentCollectedAt && new Date(o.paymentCollectedAt.toDate()).toISOString().split('T')[0] === today).reduce((acc, o) => acc + o.totalAmount, 0);
+  const deliveredTodayCount = orders.filter(o => o.status === 'delivered' && o.deliveredAt && new Date(o.deliveredAt).toISOString().split('T')[0] === today).length;
+  const revenueToday = orders.filter(o => o.status === 'delivered' && o.paymentStatus === 'collected' && o.paymentCollectedAt && new Date(o.paymentCollectedAt).toISOString().split('T')[0] === today).reduce((acc, o) => acc + o.totalAmount, 0);
   const pendingPayments = orders.filter(o => o.status === 'delivered' && o.paymentStatus === 'pending').reduce((acc, o) => acc + o.totalAmount, 0);
 
   const handleStatusChange = async (order, newStatus, additionalData = {}) => {
     try {
-      const orderRef = doc(db, 'paidOrders', order.id);
-      await updateDoc(orderRef, {
+      await supabase.from('paid_orders').update({
         status: newStatus,
-        updatedAt: serverTimestamp(),
+        updated_at: new Date(),
         ...additionalData
-      });
+      }).eq('id', order.id);
 
       // Send WhatsApp
       let msg = '';
@@ -80,9 +78,9 @@ const PaidDhobiDashboard = () => {
     
     const msg = `We've picked up your ${actualItems} clothing items. Token: ${selectedOrder.tokenId}. Expected delivery: ${selectedOrder.deliveryDate}. — SmartDhobi`;
     await handleStatusChange(selectedOrder, 'pickedUp', {
-      pickupConfirmedAt: serverTimestamp(),
-      actualItemsCount: actualItems,
-      paidDhobiId: userData.uid
+      pickup_confirmed_at: new Date(),
+      actual_items_count: actualItems,
+      paid_dhobi_id: userData.uid
     });
     
     if (useMock) {
@@ -97,24 +95,20 @@ const PaidDhobiDashboard = () => {
     setDeliveryModalOpen(false);
     
     let additionalData = {
-      deliveredAt: serverTimestamp(),
-      deliverySignedOff: true,
-      paymentStatus: paymentOption
+      delivered_at: new Date(),
+      delivery_signed_off: true,
+      payment_status: paymentOption
     };
     
     if (paymentOption === 'collected') {
-      additionalData.paymentCollectedAt = serverTimestamp();
-      additionalData.paymentCollectedBy = userData.uid;
+      additionalData.payment_collected_at = new Date();
+      additionalData.payment_collected_by = userData.uid;
     }
 
     const msg = `Your laundry has been delivered to Room ${selectedOrder.studentRoom}! Amount: ₹${selectedOrder.totalAmount} — [${paymentOption}]. Thank you! — SmartDhobi`;
     await handleStatusChange(selectedOrder, 'delivered', additionalData);
 
-    const profileRef = doc(db, 'paidDhobiProfile', userData.uid);
-    try {
-      const pDoc = await doc(db, 'users', userData.uid).get(); // We use users collection for profile tracking in this app context, but prompt requested paidDhobiProfile
-      // Creating if not exists logic can be skipped for now or handled gracefully if we don't implement full auth logic there
-    } catch (e) {}
+
 
     if (useMock) {
       console.log('[Mock WhatsApp → Student]:', msg);

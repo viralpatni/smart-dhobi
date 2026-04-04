@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useAllPaidSchedules } from '../../hooks/usePaidSchedules';
-import { collection, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { supabase } from '../../supabase';
 import { useAuth } from '../../context/AuthContext';
 import Loader from '../../components/common/Loader';
 import toast from 'react-hot-toast';
@@ -30,7 +29,7 @@ const PaidDhobiSchedules = () => {
   const handleDeactivate = async (id) => {
     if (window.confirm("Are you sure you want to deactivate this schedule? Students won't be able to book it anymore.")) {
       try {
-        await updateDoc(doc(db, 'paidSchedules', id), { isActive: false });
+        await supabase.from('paid_schedules').update({ is_active: false }).eq('id', id);
         toast.success("Schedule deactivated");
       } catch (e) {
         toast.error("Failed to deactivate");
@@ -61,17 +60,16 @@ const PaidDhobiSchedules = () => {
 
     setIsSubmitting(true);
     try {
-      await addDoc(collection(db, 'paidSchedules'), {
-        weekLabel,
-        pickupDay: formData.pickupDay,
-        pickupDate: formData.pickupDate,
-        pickupTimeSlot: formData.pickupTimeSlot,
-        deliveryDate: formData.deliveryDate,
-        deliveryTimeSlot: formData.deliveryTimeSlot,
-        hostelBlocks: blocksArr,
-        isActive: true,
-        createdBy: userData.uid,
-        createdAt: serverTimestamp()
+      await supabase.from('paid_schedules').insert({
+        week_label: weekLabel,
+        pickup_day: formData.pickupDay,
+        pickup_date: formData.pickupDate,
+        pickup_time_slot: formData.pickupTimeSlot,
+        delivery_date: formData.deliveryDate,
+        delivery_time_slot: formData.deliveryTimeSlot,
+        hostel_blocks: blocksArr,
+        is_active: true,
+        created_by: userData.uid,
       });
       
       // For notifications: We could trigger the HTTP callable function here, but we will rely on 

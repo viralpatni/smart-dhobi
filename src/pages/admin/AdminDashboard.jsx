@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { auth, db } from '../../firebase';
-import { collection, query, getDocs } from 'firebase/firestore';
+import { supabase } from '../../supabase';
 import Loader from '../../components/common/Loader';
 import { seedFirestore } from '../../utils/seedData';
 import toast from 'react-hot-toast';
@@ -20,9 +19,20 @@ const AdminDashboard = () => {
   const fetchUsers = async () => {
     setLoading(true);
     try {
-      const q = query(collection(db, 'users'));
-      const snap = await getDocs(q);
-      setUsers(snap.docs.map(d => ({id: d.id, ...d.data()})));
+      const { data, error } = await supabase.from('profiles').select('*');
+      if (error) throw error;
+      // Map snake_case to camelCase
+      const mapped = data.map(d => ({
+        id: d.id,
+        name: d.name,
+        email: d.email,
+        phone: d.phone,
+        role: d.role,
+        uniqueId: d.unique_id,
+        hostelBlock: d.hostel_block,
+        roomNo: d.room_no
+      }));
+      setUsers(mapped);
     } catch (e) {
       console.error(e);
       toast.error('Failed to load users');
@@ -35,8 +45,8 @@ const AdminDashboard = () => {
     fetchUsers();
   }, []);
 
-  const handleLogout = () => {
-    auth.signOut();
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     navigate('/login');
   };
 

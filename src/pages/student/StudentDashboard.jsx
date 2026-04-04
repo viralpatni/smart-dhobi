@@ -6,7 +6,7 @@ import { useNotifications } from '../../hooks/useNotifications';
 import LiveStatusTracker from '../../components/student/LiveStatusTracker';
 import OnMyWayButton from '../../components/student/OnMyWayButton';
 import { Link, useNavigate } from 'react-router-dom';
-import { auth } from '../../firebase';
+import { supabase } from '../../supabase';
 import Loader from '../../components/common/Loader';
 import ModeSwitcher from '../../components/student/ModeSwitcher';
 import PaidDashboard from '../../components/student/PaidDashboard';
@@ -21,12 +21,14 @@ const StudentDashboard = () => {
   // Listen to new real-time notifications
   useNotifications(currentUser?.uid);
 
-  const handleLogout = () => {
-    auth.signOut();
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     navigate('/login');
   };
 
   if (orderLoading || scheduleLoading) return <Loader fullScreen />;
+
+  if (!userData) return <Loader fullScreen />;
 
   const isRecentCollected = order && order.status === 'collected' && (() => {
     if (!order.collectedTime) return false;
@@ -49,7 +51,7 @@ const StudentDashboard = () => {
           <div className="flex justify-between items-center">
             <div>
               <p className="text-slate-500 text-sm">Good morning,</p>
-              <h1 className="text-xl font-bold text-gray-800">{userData.name.split(' ')[0]} 👋</h1>
+              <h1 className="text-xl font-bold text-gray-800">{userData?.name?.split(' ')[0] || 'Student'} 👋</h1>
             </div>
             <div className="flex items-center gap-3">
               <button 

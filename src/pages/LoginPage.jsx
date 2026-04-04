@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
-import { auth, db } from '../firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { supabase } from '../supabase';
 import { useNavigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
@@ -15,58 +13,64 @@ const LoginPage = () => {
 
   const handleLogin = async (e) => {
     if(e) e.preventDefault();
-    
-    if (import.meta.env.VITE_FIREBASE_API_KEY === 'your_firebase_api_key') {
-      toast.error('Firebase is not connected! Please add your Database keys to the .env file.');
-      return;
-    }
 
     setLoading(true);
     try {
-      let userCredential;
       // Convert Registration ID / Staff ID to the seamless email format
-      // Must match exactly what SignupPage generates
       const formattedEmail = email.includes('@') 
         ? email 
         : `${email.toLowerCase().replace(/[^a-z0-9]/g, '')}@smartdhobi.com`;
 
-      try {
-        userCredential = await signInWithEmailAndPassword(auth, formattedEmail, password);
-      } catch (authErr) {
-        // Only auto-create for the 4 built-in demo accounts
+      // Try sign in first
+      let authResult = await supabase.auth.signInWithPassword({
+        email: formattedEmail,
+        password,
+      });
+
+      // For demo accounts, auto-create if not found
+      if (authResult.error) {
         const isDemoAccount = ['student@smartdhobi.com', 'dhobi@smartdhobi.com', 'admin@smartdhobi.com', 'paidstaff@smartdhobi.com'].includes(formattedEmail);
-        if (isDemoAccount && authErr.code === 'auth/user-not-found') {
-          userCredential = await createUserWithEmailAndPassword(auth, formattedEmail, password);
+        if (isDemoAccount) {
+          authResult = await supabase.auth.signUp({
+            email: formattedEmail,
+            password,
+          });
+          if (authResult.error) throw authResult.error;
         } else {
-          throw authErr;
+          throw authResult.error;
         }
       }
 
-      const user = userCredential.user;
-      const userDocRef = doc(db, 'users', user.uid);
-      const userDoc = await getDoc(userDocRef);
-      
+      const user = authResult.data?.user;
+      if (!user) throw new Error('Login failed - no user returned');
+
+      // Check if profile exists
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
       let uRole = role;
 
-      if (userDoc.exists()) {
-        uRole = userDoc.data().role;
+      if (profile) {
+        uRole = profile.role;
       } else {
+        // Auto-create profile for demo accounts
         if (formattedEmail.includes('student')) uRole = 'student';
         else if (formattedEmail.includes('dhobi')) uRole = 'staff';
         else if (formattedEmail.includes('admin')) uRole = 'admin';
         else if (formattedEmail.includes('paidstaff')) uRole = 'paidStaff';
 
-        await setDoc(userDocRef, {
-          uid: user.uid,
+        await supabase.from('profiles').insert({
+          id: user.id,
           name: formattedEmail.split('@')[0].toUpperCase(),
           email: formattedEmail,
           phone: '+919876543210',
           role: uRole,
-          hostelBlock: 'Block A',
-          roomNo: '101',
-          qrCodeData: user.uid,
-          fcmToken: '',
-          createdAt: new Date()
+          hostel_block: 'Block A',
+          room_no: '101',
+          unique_id: '',
         });
       }
 
@@ -76,17 +80,14 @@ const LoginPage = () => {
       else if (uRole === 'paidStaff') navigate('/paid-dhobi/dashboard');
 
     } catch (error) {
-      console.error('Login error:', error.code, error.message);
-      if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
-        toast.error('No account found with this ID. Please sign up first.');
-      } else if (error.code === 'auth/wrong-password') {
-        toast.error('Wrong password. Please try again.');
-      } else if (error.code === 'auth/too-many-requests') {
-        toast.error('Too many failed attempts. Please wait a moment and try again.');
-      } else if (error.code === 'auth/invalid-email') {
-        toast.error('Invalid ID format. Please check and try again.');
+      console.error('Login error:', error);
+      const msg = error.message || 'Login failed';
+      if (msg.includes('Invalid login credentials')) {
+        toast.error('No account found with this ID, or wrong password. Please sign up first.');
+      } else if (msg.includes('Email not confirmed')) {
+        toast.error('Please check your email to confirm your account.');
       } else {
-        toast.error(`Login failed: ${error.message}`);
+        toast.error(`Login failed: ${msg}`);
       }
     } finally {
       setLoading(false);
@@ -116,7 +117,6 @@ const LoginPage = () => {
     
     setEmail(demoEmail);
     setPassword(demoPass);
-    // Auto submit
     setTimeout(() => {
       document.getElementById("loginForm").requestSubmit();
     }, 100);

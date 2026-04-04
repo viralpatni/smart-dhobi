@@ -1,68 +1,108 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
-import { db } from '../firebase';
+import { supabase } from '../supabase';
 
-export const useStudentOrder = (userId) => {
+// Hook: get the latest order for a specific student
+export const useStudentOrder = (studentId) => {
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!userId) {
-      setLoading(false);
-      return;
-    }
+    if (!studentId) { setLoading(false); return; }
 
-    const q = query(
-      collection(db, 'orders'),
-      where('studentId', '==', userId),
-      orderBy('createdAt', 'desc'),
-      limit(1)
-    );
+    const fetchOrder = async () => {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('student_id', studentId)
+        .order('created_at', { ascending: false })
+        .limit(1);
 
-    const unsub = onSnapshot(q, (snapshot) => {
-      if (!snapshot.empty) {
-        setOrder({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() });
-      } else {
-        setOrder(null);
+      if (!error && data?.length > 0) {
+        setOrder(mapOrder(data[0]));
       }
       setLoading(false);
-    }, (error) => {
-      console.error("Error fetching order:", error);
-      setLoading(false);
-    });
+    };
+    fetchOrder();
 
-    return () => unsub();
-  }, [userId]);
+    // Real-time subscription
+    const channel = supabase
+      .channel(`student-order-${studentId}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'orders',
+        filter: `student_id=eq.${studentId}`,
+      }, (payload) => {
+        if (payload.eventType === 'DELETE') {
+          setOrder(null);
+        } else {
+          setOrder(mapOrder(payload.new));
+        }
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [studentId]);
 
   return { order, loading };
 };
 
+// Hook: get all active (non-collected) orders
 export const useAllActiveOrders = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const q = query(
-      collection(db, 'orders'),
-      where('status', '!=', 'collected')
-    );
+    const fetchOrders = async () => {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .neq('status', 'collected')
+        .order('created_at', { ascending: false });
 
-    const unsub = onSnapshot(q, (snapshot) => {
-      const activeOrders = [];
-      snapshot.forEach((doc) => {
-        activeOrders.push({ id: doc.id, ...doc.data() });
-      });
-      // Sort manually since inequality filter requires first orderBy to be same field
-      activeOrders.sort((a, b) => b.createdAt?.toMillis() - a.createdAt?.toMillis());
-      setOrders(activeOrders);
+      if (!error) setOrders((data || []).map(mapOrder));
       setLoading(false);
-    }, (error) => {
-      console.error("Error fetching active orders:", error);
-      setLoading(false);
-    });
+    };
+    fetchOrders();
 
-    return () => unsub();
+    const channel = supabase
+      .channel('active-orders')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'orders',
+      }, () => {
+        // Re-fetch on any change
+        fetchOrders();
+      })
+      .subscribe();
+
+    // Need to define fetchOrders outside or use a ref; simplify:
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   return { orders, loading };
 };
+
+// Map snake_case to camelCase for component compatibility
+function mapOrder(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    tokenId: row.token_id,
+    studentId: row.student_id,
+    studentName: row.student_name,
+    studentRoom: row.student_room,
+    hostelBlock: row.hostel_block,
+    clothesCount: row.clothes_count,
+    items: row.items,
+    status: row.status,
+    rackNumber: row.rack_number,
+    missingItems: row.missing_items,
+    onMyWay: row.on_my_way,
+    onMyWayAt: row.on_my_way_at,
+    collectedTime: row.collected_time,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}

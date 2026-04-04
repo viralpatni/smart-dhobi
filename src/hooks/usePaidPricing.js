@@ -1,40 +1,73 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
-import { db } from '../firebase';
+import { supabase } from '../supabase';
 
+// Available pricing items (for students)
 export const usePaidPricing = () => {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const q = query(
-      collection(db, 'paidPricing'),
-      where('isAvailable', '==', true)
-    );
-    const unsub = onSnapshot(q, (snap) => {
-      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      data.sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
-      setItems(data);
+    const fetch = async () => {
+      const { data } = await supabase
+        .from('paid_pricing')
+        .select('*')
+        .eq('is_available', true)
+        .order('display_order', { ascending: true });
+      setItems((data || []).map(mapPricing));
       setLoading(false);
-    }, (err) => { console.error('usePaidPricing error:', err); setLoading(false); });
-    return unsub;
+    };
+    fetch();
+
+    const channel = supabase
+      .channel('paid-pricing')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'paid_pricing' }, () => fetch())
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
   }, []);
 
   return { items, loading };
 };
 
+// All pricing items (for staff admin)
 export const useAllPaidPricing = () => {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const q = query(collection(db, 'paidPricing'), orderBy('displayOrder', 'asc'));
-    const unsub = onSnapshot(q, (snap) => {
-      setItems(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    const fetch = async () => {
+      const { data } = await supabase
+        .from('paid_pricing')
+        .select('*')
+        .order('display_order', { ascending: true });
+      setItems((data || []).map(mapPricing));
       setLoading(false);
-    }, (err) => { console.error('useAllPaidPricing error:', err); setLoading(false); });
-    return unsub;
+    };
+    fetch();
+
+    const channel = supabase
+      .channel('all-paid-pricing')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'paid_pricing' }, () => fetch())
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
   }, []);
 
   return { items, loading };
 };
+
+function mapPricing(row) {
+  return {
+    id: row.id,
+    itemName: row.item_name,
+    category: row.category,
+    pricePerPiece: row.price_per_piece,
+    unit: row.unit,
+    iconEmoji: row.icon_emoji,
+    isAvailable: row.is_available,
+    displayOrder: row.display_order,
+    lastUpdatedBy: row.last_updated_by,
+    lastUpdatedAt: row.last_updated_at,
+    createdAt: row.created_at,
+  };
+}

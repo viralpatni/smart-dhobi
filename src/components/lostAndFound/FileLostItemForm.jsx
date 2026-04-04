@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, orderBy, limit, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '../../firebase';
+import { supabase } from '../../supabase';
 import { useAuth } from '../../context/AuthContext';
 import { sendNotification } from '../../utils/sendNotification';
 import toast from 'react-hot-toast';
@@ -53,17 +51,25 @@ const FileLostItemForm = ({ onSuccess }) => {
     const fetchOrders = async () => {
       if (!currentUser) return;
       try {
-        const q = query(
-          collection(db, 'orders'),
-          where('studentId', '==', currentUser.uid),
-          orderBy('createdAt', 'desc'),
-          limit(10)
-        );
-        const snap = await getDocs(q);
-        const data = snap.docs
-          .map(doc => ({ id: doc.id, ...doc.data() }))
-          .filter(o => o.status === 'collected');
-        setOrders(data);
+        const { data, error } = await supabase
+          .from('orders')
+          .select('*')
+          .eq('student_id', currentUser.uid)
+          .eq('status', 'collected')
+          .order('created_at', { ascending: false })
+          .limit(10);
+          
+        if (data) {
+          const mapped = data.map(o => ({
+             id: o.id,
+             tokenId: o.token_id,
+             clothesCount: o.clothes_count,
+             collectedTime: o.collected_time,
+             createdAt: o.created_at,
+             ...o
+          }));
+          setOrders(mapped);
+        }
       } catch (err) {
         console.error('Error fetching orders:', err);
       } finally {
@@ -95,23 +101,26 @@ const FileLostItemForm = ({ onSuccess }) => {
 
   const uploadPhoto = async () => {
     if (!photoFile) return null;
-    const storagePath = `lostAndFound/${currentUser.uid}/${Date.now()}.jpg`;
-    const storageRef = ref(storage, storagePath);
-    const uploadTask = uploadBytesResumable(storageRef, photoFile);
-
-    return new Promise((resolve, reject) => {
-      uploadTask.on(
-        'state_changed',
-        (snapshot) => {
-          const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-          setUploadProgress(progress);
-        },
-        (error) => reject(error),
-        async () => {
-          const url = await getDownloadURL(uploadTask.snapshot.ref);
-          resolve(url);
-        }
-      );
+    const fileName = `${Date.now()}.jpg`;
+    const storagePath = `${currentUser.uid}/${fileName}`;
+    
+    return new Promise(async (resolve, reject) => {
+      try {
+        const { data, error } = await supabase.storage
+          .from('lost_and_found')
+          .upload(storagePath, photoFile, { upsert: false });
+          
+        if (error) throw error;
+        
+        const { data: { publicUrl } } = supabase.storage
+          .from('lost_and_found')
+          .getPublicUrl(storagePath);
+          
+        setUploadProgress(100);
+        resolve(publicUrl);
+      } catch (e) {
+        reject(e);
+      }
     });
   };
 
@@ -127,48 +136,55 @@ const FileLostItemForm = ({ onSuccess }) => {
       const collectedTime = selectedOrder.collectedTime;
 
       const complaintData = {
-        studentId: currentUser.uid,
-        studentName: userData?.name || '',
-        studentPhone: userData?.phone || '',
-        studentRoom: userData?.roomNo || '',
-        hostelBlock: userData?.hostelBlock || '',
-        relatedOrderId: selectedOrder.id,
-        relatedTokenId: selectedOrder.tokenId,
-        collectionDate: collectedTime || null,
-        itemType,
-        itemColor,
-        itemBrand: itemBrand || 'No brand',
-        itemDescription,
-        itemPhoto: photoUrl,
+        student_id: currentUser.uid,
+        student_name: userData?.name || '',
+        student_phone: userData?.phone || '',
+        student_room: userData?.roomNo || '',
+        student_block: userData?.hostelBlock || '',
+        related_order_id: selectedOrder.id,
+        related_token_id: selectedOrder.tokenId,
+        collection_date: collectedTime || null,
+        item_type: itemType,
+        item_color: itemColor,
+        item_brand: itemBrand || 'No brand',
+        item_description: itemDescription,
+        item_photo: photoUrl,
         quantity,
         status: 'open',
         priority: 'medium',
-        assignedDhobiId: null,
-        staffNotes: '',
-        foundLocation: '',
-        resolvedAt: null,
-        resolutionNote: '',
-        notificationLog: {
+        assigned_dhobi_id: null,
+        staff_notes: '',
+        found_location: '',
+        resolved_at: null,
+        resolution_note: '',
+        notification_log: {
           complaintReceived: true,
           statusUpdated: false,
           itemFound: false
         },
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
+        created_at: new Date(),
+        updated_at: new Date()
       };
 
-      const docRef = await addDoc(collection(db, 'lostAndFound'), complaintData);
+      const { data: docData, error: insertError } = await supabase
+        .from('lost_items')
+        .insert(complaintData)
+        .select('id')
+        .single();
+        
+      if (insertError) throw insertError;
+      const docRefId = docData.id;
 
       // Add first timeline event
-      await addDoc(collection(db, 'lostAndFound', docRef.id, 'timeline'), {
+      await supabase.from('lost_item_timeline').insert({
+        complaint_id: docRefId,
         event: 'Complaint filed by student',
         by: 'student',
         note: `Missing ${itemColor} ${itemType} reported for order ${selectedOrder.tokenId}`,
-        timestamp: serverTimestamp()
       });
 
       // Notification to student
-      const studentMsg = `Your lost item complaint has been filed. Complaint ID: ${docRef.id.substring(0, 8).toUpperCase()}. We will review and update you within 24 hours. — SmartDhobi`;
+      const studentMsg = `Your lost item complaint has been filed. Complaint ID: ${docRefId.substring(0, 8).toUpperCase()}. We will review and update you within 24 hours. — SmartDhobi`;
       if (useMock) {
         console.log('[Mock WhatsApp → Student]:', studentMsg);
         toast(studentMsg, { duration: 6000, icon: '📩' });
@@ -184,7 +200,7 @@ const FileLostItemForm = ({ onSuccess }) => {
       }
       // Fire-and-forget notification to all staff (via Cloud Function trigger instead)
 
-      setNewComplaintId(docRef.id.substring(0, 8).toUpperCase());
+      setNewComplaintId(docRefId.substring(0, 8).toUpperCase());
       setSubmitted(true);
     } catch (err) {
       console.error('Submit complaint error:', err);
