@@ -1,108 +1,67 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../supabase';
+import { collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
+import { db } from '../firebase';
 
-// Hook: get the latest order for a specific student
-export const useStudentOrder = (studentId) => {
+export const useStudentOrder = (userId) => {
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!studentId) { setLoading(false); return; }
+    if (!userId) {
+      setLoading(false);
+      return;
+    }
 
-    const fetchOrder = async () => {
-      const { data, error } = await supabase
-        .from('orders')
-        .select('*')
-        .eq('student_id', studentId)
-        .order('created_at', { ascending: false })
-        .limit(1);
+    const q = query(
+      collection(db, 'orders'),
+      where('studentId', '==', userId),
+      orderBy('createdAt', 'desc'),
+      limit(1)
+    );
 
-      if (!error && data?.length > 0) {
-        setOrder(mapOrder(data[0]));
+    const unsub = onSnapshot(q, (snapshot) => {
+      if (!snapshot.empty) {
+        setOrder({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() });
+      } else {
+        setOrder(null);
       }
       setLoading(false);
-    };
-    fetchOrder();
+    }, (error) => {
+      console.error("Error fetching order:", error);
+      setLoading(false);
+    });
 
-    // Real-time subscription
-    const channel = supabase
-      .channel(`student-order-${studentId}`)
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'orders',
-        filter: `student_id=eq.${studentId}`,
-      }, (payload) => {
-        if (payload.eventType === 'DELETE') {
-          setOrder(null);
-        } else {
-          setOrder(mapOrder(payload.new));
-        }
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, [studentId]);
+    return () => unsub();
+  }, [userId]);
 
   return { order, loading };
 };
 
-// Hook: get all active (non-collected) orders
 export const useAllActiveOrders = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchOrders = async () => {
-      const { data, error } = await supabase
-        .from('orders')
-        .select('*')
-        .neq('status', 'collected')
-        .order('created_at', { ascending: false });
+    const q = query(
+      collection(db, 'orders'),
+      where('status', '!=', 'collected')
+    );
 
-      if (!error) setOrders((data || []).map(mapOrder));
+    const unsub = onSnapshot(q, (snapshot) => {
+      const activeOrders = [];
+      snapshot.forEach((doc) => {
+        activeOrders.push({ id: doc.id, ...doc.data() });
+      });
+      activeOrders.sort((a, b) => b.createdAt?.toMillis() - a.createdAt?.toMillis());
+      setOrders(activeOrders);
       setLoading(false);
-    };
-    fetchOrders();
+    }, (error) => {
+      console.error("Error fetching active orders:", error);
+      setLoading(false);
+    });
 
-    const channel = supabase
-      .channel('active-orders')
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'orders',
-      }, () => {
-        // Re-fetch on any change
-        fetchOrders();
-      })
-      .subscribe();
-
-    // Need to define fetchOrders outside or use a ref; simplify:
-    return () => { supabase.removeChannel(channel); };
+    return () => unsub();
   }, []);
 
   return { orders, loading };
 };
-
-// Map snake_case to camelCase for component compatibility
-function mapOrder(row) {
-  if (!row) return null;
-  return {
-    id: row.id,
-    tokenId: row.token_id,
-    studentId: row.student_id,
-    studentName: row.student_name,
-    studentRoom: row.student_room,
-    hostelBlock: row.hostel_block,
-    clothesCount: row.clothes_count,
-    items: row.items,
-    status: row.status,
-    rackNumber: row.rack_number,
-    missingItems: row.missing_items,
-    onMyWay: row.on_my_way,
-    onMyWayAt: row.on_my_way_at,
-    collectedTime: row.collected_time,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}

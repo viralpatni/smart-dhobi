@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../../supabase';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '../../firebase';
 import toast from 'react-hot-toast';
 
 const ScheduleUploader = ({ isOpen, onClose }) => {
@@ -55,13 +56,12 @@ const ScheduleUploader = ({ isOpen, onClose }) => {
         scheduleMap[d.date] = d.range.trim(); // "101-319" or ""
       });
 
-      await supabase.from('monthly_schedules').upsert({
-        id: docId,
+      await setDoc(doc(db, 'monthlySchedules', docId), {
         year: parseInt(formData.year),
         month: parseInt(formData.month),
-        hostel_block: formData.hostelBlock,
-        schedule_map: scheduleMap,
-        updated_at: new Date()
+        hostelBlock: formData.hostelBlock,
+        scheduleMap: scheduleMap,
+        updatedAt: new Date()
       });
 
       toast.success(`${formData.hostelBlock} schedule saved for ${formData.month}/${formData.year}!`);

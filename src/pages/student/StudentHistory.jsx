@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { supabase } from '../../supabase';
+import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
+import { db } from '../../firebase';
 import StatusBadge from '../../components/common/StatusBadge';
 import { formatStandardDate } from '../../utils/formatDate';
 import { Link } from 'react-router-dom';
@@ -17,30 +18,14 @@ const StudentHistory = () => {
     const fetchHistory = async () => {
       if (!currentUser) return;
       try {
-        const { data, error } = await supabase
-          .from('orders')
-          .select('*')
-          .eq('student_id', currentUser.uid)
-          .order('created_at', { ascending: false });
-          
-        if (data) {
-          const fetched = data.map(doc => ({ 
-             id: doc.id, 
-             studentId: doc.student_id,
-             clothesCount: doc.clothes_count,
-             verifiedCount: doc.verified_count,
-             returnCount: doc.return_count,
-             declaredCount: doc.declared_count,
-             tokenId: doc.token_id,
-             missingCount: doc.missing_count,
-             missingItemReported: doc.missing_item_reported,
-             rackNo: doc.rack_no,
-             collectedTime: doc.collected_time,
-             createdAt: doc.created_at,
-             status: doc.status
-          }));
-          setOrders(fetched);
-        }
+        const q = query(
+          collection(db, 'orders'),
+          where('studentId', '==', currentUser.uid),
+          orderBy('createdAt', 'desc')
+        );
+        const querySnapshot = await getDocs(q);
+        const fetched = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setOrders(fetched);
       } catch (error) {
         console.error("Error fetching history:", error);
       } finally {
@@ -52,7 +37,7 @@ const StudentHistory = () => {
 
   const isWithin24Hours = (timestamp) => {
     if (!timestamp) return false;
-    const collectedTime = timestamp instanceof Date ? timestamp : new Date(timestamp);
+    const collectedTime = timestamp instanceof Date ? timestamp : timestamp.toDate();
     const diffHours = Math.abs(new Date() - collectedTime) / 36e5;
     return diffHours <= 24;
   };

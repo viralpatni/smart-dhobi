@@ -1,5 +1,5 @@
 import React from 'react';
-import { PieChart, Pie, Tooltip, ResponsiveContainer, Cell, Legend } from 'recharts';
+import { PieChart, Pie, Tooltip, ResponsiveContainer, Cell, Legend, LineChart, Line, XAxis, YAxis, CartesianGrid } from 'recharts';
 
 const COLORS = ['#0D9488', '#F59E0B', '#3B82F6', '#EC4899', '#8B5CF6', '#14B8A6'];
 
@@ -20,6 +20,11 @@ const AnalyticsPanel = ({ analytics, activeOrders = [] }) => {
   ];
   
   const data = rawData.filter(d => d.value > 0);
+  
+  const trendData = [
+    { name: 'Start of Day', dropoffs: 0, washed: 0, collected: 0 },
+    { name: 'Current', dropoffs: processingCount, washed: washedCount, collected: collectedCount }
+  ];
 
   return (
     <div className="space-y-6">
@@ -88,6 +93,26 @@ const AnalyticsPanel = ({ analytics, activeOrders = [] }) => {
               />
               <Legend verticalAlign="bottom" height={36} />
             </PieChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm mt-8">
+        <h3 className="font-bold text-gray-800 mb-6">Process Trends (Line Chart)</h3>
+        <div className="h-[280px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={trendData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
+              <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
+              <Tooltip 
+                contentStyle={{ borderRadius: '8px', border: '1px solid #E2E8F0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+              />
+              <Legend verticalAlign="bottom" height={36} wrapperStyle={{ paddingTop: '20px' }} />
+              <Line type="monotone" dataKey="dropoffs" name="Drop-offs" stroke="#0D9488" strokeWidth={3} dot={{r: 6, strokeWidth: 2}} activeDot={{r: 8}} />
+              <Line type="monotone" dataKey="washed" name="Clothes Washed" stroke="#EAB308" strokeWidth={3} dot={{r: 6, strokeWidth: 2}} activeDot={{r: 8}} />
+              <Line type="monotone" dataKey="collected" name="Washed & Collected" stroke="#F97316" strokeWidth={3} dot={{r: 6, strokeWidth: 2}} activeDot={{r: 8}} />
+            </LineChart>
           </ResponsiveContainer>
         </div>
       </div>

@@ -1,231 +1,187 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../supabase';
+import { 
+  collection, 
+  query, 
+  where, 
+  orderBy, 
+  onSnapshot,
+  addDoc,
+  serverTimestamp
+} from 'firebase/firestore';
+import { db } from '../firebase';
 
-// ──────────────────────────────────────────────
-// Student: my submitted complaints/feedback
-// ──────────────────────────────────────────────
 export const useStudentSubmissions = (studentId) => {
   const [submissions, setSubmissions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (!studentId) { setLoading(false); return; }
-
-    const fetch = async () => {
-      const { data } = await supabase
-        .from('complaints')
-        .select('*')
-        .eq('student_id', studentId)
-        .order('created_at', { ascending: false });
-      setSubmissions((data || []).map(mapComplaint));
+    if (!studentId) {
       setLoading(false);
-    };
-    fetch();
+      return;
+    }
 
-    const channel = supabase
-      .channel(`student-complaints-${studentId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'complaints', filter: `student_id=eq.${studentId}` }, () => fetch())
-      .subscribe();
+    const q = query(
+      collection(db, 'complaints'),
+      where('studentId', '==', studentId)
+    );
 
-    return () => supabase.removeChannel(channel);
+    const unsubscribe = onSnapshot(q, (snap) => {
+      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      data.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
+      setSubmissions(data);
+      setLoading(false);
+    }, (err) => {
+      console.error("useStudentSubmissions error:", err);
+      setError(err);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
   }, [studentId]);
 
-  return { submissions, loading };
+  return { submissions, loading, error };
 };
 
-// ──────────────────────────────────────────────
-// Staff: complaints meant for this staff member
-// ──────────────────────────────────────────────
 export const useStaffComplaints = (staffId, staffRole) => {
   const [complaints, setComplaints] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (!staffId) { setLoading(false); return; }
+    if (!staffId || !staffRole) {
+      setLoading(false);
+      return;
+    }
 
-    const fetch = async () => {
-      // Get complaints against this staff + general complaints of same service type
-      const serviceType = staffRole === 'paidStaff' ? 'paidLaundry' : 'freeLaundry';
+    const restrictedStatuses = ["escalatedToAdmin", "resolvedByAdmin", "closed"];
+    const serviceFilter = staffRole === 'paidStaff' ? 'paidLaundry' : 'freeLaundry';
 
-      const { data: againstMe } = await supabase
-        .from('complaints')
-        .select('*')
-        .eq('against_staff_id', staffId)
-        .order('created_at', { ascending: false });
+    const qAgainstMe = query(
+      collection(db, 'complaints'),
+      where('againstStaffId', '==', staffId)
+    );
 
-      const { data: general } = await supabase
-        .from('complaints')
-        .select('*')
-        .eq('service_type', serviceType)
-        .eq('against_staff_id', '')
-        .order('created_at', { ascending: false });
+    const qGeneral = query(
+      collection(db, 'complaints'),
+      where('againstStaffId', '==', null),
+      where('serviceType', '==', serviceFilter)
+    );
 
-      // Merge and deduplicate
-      const map = new Map();
-      [...(againstMe || []), ...(general || [])].forEach(c => map.set(c.id, c));
-      const merged = Array.from(map.values())
-        .map(mapComplaint)
-        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    let unsubMe = null;
+    let unsubGeneral = null;
 
-      setComplaints(merged);
+    let meData = [];
+    let generalData = [];
+
+    const handleMerge = () => {
+      const mergedMap = new Map();
+      [...meData, ...generalData].forEach(doc => {
+        if (!restrictedStatuses.includes(doc.status)) {
+          mergedMap.set(doc.id, doc);
+        }
+      });
+      const mergedArray = Array.from(mergedMap.values()).sort((a, b) => {
+        const timeA = a.createdAt?.toMillis() || 0;
+        const timeB = b.createdAt?.toMillis() || 0;
+        return timeB - timeA;
+      });
+      setComplaints(mergedArray);
       setLoading(false);
     };
-    fetch();
 
-    const channel = supabase
-      .channel(`staff-complaints-${staffId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'complaints' }, () => fetch())
-      .subscribe();
+    unsubMe = onSnapshot(qAgainstMe, (snap) => {
+      meData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      handleMerge();
+    }, (err) => {
+      console.error(err);
+      setError(err);
+    });
 
-    return () => supabase.removeChannel(channel);
+    unsubGeneral = onSnapshot(qGeneral, (snap) => {
+      generalData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      handleMerge();
+    }, (err) => {
+      console.error(err);
+      setError(err);
+    });
+
+    return () => {
+      if (unsubMe) unsubMe();
+      if (unsubGeneral) unsubGeneral();
+    };
   }, [staffId, staffRole]);
 
-  return { complaints, loading };
+  return { complaints, loading, error };
 };
 
-// ──────────────────────────────────────────────
-// Admin: all complaints 
-// ──────────────────────────────────────────────
 export const useAllComplaints = () => {
   const [complaints, setComplaints] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    const fetch = async () => {
-      const { data } = await supabase
-        .from('complaints')
-        .select('*')
-        .order('created_at', { ascending: false });
-      setComplaints((data || []).map(mapComplaint));
+    const q = query(
+      collection(db, 'complaints'),
+      orderBy('createdAt', 'desc')
+    );
+
+    const unsubscribe = onSnapshot(q, (snap) => {
+      setComplaints(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setLoading(false);
-    };
-    fetch();
+    }, (err) => {
+      console.error("useAllComplaints error:", err);
+      setError(err);
+      setLoading(false);
+    });
 
-    const channel = supabase
-      .channel('all-complaints')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'complaints' }, () => fetch())
-      .subscribe();
-
-    return () => supabase.removeChannel(channel);
+    return () => unsubscribe();
   }, []);
 
-  return { complaints, loading };
+  return { complaints, loading, error };
 };
 
-// ──────────────────────────────────────────────
-// Complaint discussion thread
-// ──────────────────────────────────────────────
-export const useComplaintThread = (complaintId, includeInternal = false) => {
+export const useComplaintThread = (complaintId, isStaffOrAdmin) => {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (!complaintId) { setLoading(false); return; }
-
-    const fetch = async () => {
-      let q = supabase
-        .from('complaint_threads')
-        .select('*')
-        .eq('complaint_id', complaintId)
-        .order('created_at', { ascending: true });
-
-      if (!includeInternal) {
-        q = q.eq('is_internal', false);
-      }
-
-      const { data } = await q;
-      setMessages((data || []).map(mapThread));
+    if (!complaintId) {
       setLoading(false);
-    };
-    fetch();
+      return;
+    }
 
-    const channel = supabase
-      .channel(`thread-${complaintId}`)
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'complaint_threads',
-        filter: `complaint_id=eq.${complaintId}`,
-      }, (payload) => {
-        const msg = mapThread(payload.new);
-        if (!includeInternal && msg.isInternal) return;
-        setMessages(prev => [...prev, msg]);
-      })
-      .subscribe();
+    const q = query(
+      collection(db, `complaints/${complaintId}/thread`),
+      orderBy('createdAt', 'asc')
+    );
 
-    return () => supabase.removeChannel(channel);
-  }, [complaintId, includeInternal]);
-
-  return { messages, loading };
-};
-
-// ──────────────────────────────────────────────
-// Add a thread message
-// ──────────────────────────────────────────────
-export const addThreadMessage = async (complaintId, { authorId, authorName, authorRole, message, isInternal }) => {
-  const { error } = await supabase
-    .from('complaint_threads')
-    .insert({
-      complaint_id: complaintId,
-      author_id: authorId,
-      author_name: authorName,
-      author_role: authorRole,
-      message,
-      is_internal: isInternal || false,
+    const unsubscribe = onSnapshot(q, (snap) => {
+      let data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      if (!isStaffOrAdmin) {
+        data = data.filter(msg => !msg.isInternal);
+      }
+      setMessages(data);
+      setLoading(false);
+    }, (err) => {
+      console.error("useComplaintThread error:", err);
+      setError(err);
+      setLoading(false);
     });
-  if (error) throw error;
+
+    return () => unsubscribe();
+  }, [complaintId, isStaffOrAdmin]);
+
+  return { messages, loading, error };
 };
 
-// ──────────────────────────────────────────────
-// Mappers
-// ──────────────────────────────────────────────
-function mapComplaint(row) {
-  return {
-    id: row.id,
-    type: row.type,
-    studentId: row.student_id,
-    studentName: row.student_name,
-    studentPhone: row.student_phone,
-    studentRoom: row.student_room,
-    hostelBlock: row.hostel_block,
-    title: row.title,
-    description: row.description,
-    category: row.category,
-    serviceType: row.service_type,
-    relatedTokenId: row.related_token_id,
-    suggestedSolution: row.suggested_solution,
-    attachmentUrl: row.attachment_url,
-    isAnonymous: row.is_anonymous,
-    againstStaffId: row.against_staff_id,
-    againstStaffName: row.against_staff_name,
-    againstStaffRole: row.against_staff_role,
-    status: row.status,
-    priority: row.priority,
-    rating: row.rating,
-    staffResponse: row.staff_response,
-    resolutionSummary: row.resolution_summary,
-    staffRespondedAt: row.staff_responded_at,
-    staffRespondedBy: row.staff_responded_by,
-    adminResponse: row.admin_response,
-    adminRespondedAt: row.admin_responded_at,
-    adminRespondedBy: row.admin_responded_by,
-    isEscalated: row.is_escalated,
-    escalatedAt: row.escalated_at,
-    studentSatisfied: row.student_satisfied,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
-function mapThread(row) {
-  return {
-    id: row.id,
-    complaintId: row.complaint_id,
-    authorId: row.author_id,
-    authorName: row.author_name,
-    authorRole: row.author_role,
-    message: row.message,
-    isInternal: row.is_internal,
-    createdAt: row.created_at,
-  };
-}
+export const addThreadMessage = async (complaintId, msgPayload) => {
+  if (!complaintId || !msgPayload.authorId) throw new Error("Missing thread requirements");
+  return await addDoc(collection(db, `complaints/${complaintId}/thread`), {
+    ...msgPayload,
+    isInternal: !!msgPayload.isInternal,
+    attachmentUrl: msgPayload.attachmentUrl || null,
+    createdAt: serverTimestamp()
+  });
+};

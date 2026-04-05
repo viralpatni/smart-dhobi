@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import StatusBadge from '../common/StatusBadge';
 import { formatTimeAgo } from '../../utils/formatDate';
-import { supabase } from '../../supabase';
+import { db } from '../../firebase';
+import { doc, updateDoc, getDoc, deleteDoc } from 'firebase/firestore';
 import { sendNotification } from '../../utils/sendNotification';
 import toast from 'react-hot-toast';
 
@@ -18,8 +19,12 @@ const OrderCard = ({ order, onAssignRack }) => {
   const updateStatus = async (newStatus) => {
     setLoading(true);
     try {
-      await supabase.from('orders').update({ status: newStatus }).eq('id', order.id);
+      await updateDoc(doc(db, 'orders', order.id), { status: newStatus });
       toast.success(`Status updated to ${newStatus}`);
+      
+      if (newStatus === 'washing') {
+        await sendNotification(order.studentId, `🧼 Your laundry (${order.tokenId}) is now being washed!`);
+      }
     } catch (error) {
       console.error(error);
       toast.error('Failed to update status');
@@ -39,8 +44,8 @@ const OrderCard = ({ order, onAssignRack }) => {
     setLoading(true);
     try {
       const updatePayload = {
-        verified_count: newCount,
-        clothes_count: newCount, // Update the official count
+        verifiedCount: newCount,
+        clothesCount: newCount, // Update the official count
       };
 
       // If count differs from declared, send silent notification
@@ -49,11 +54,11 @@ const OrderCard = ({ order, onAssignRack }) => {
         const deadline = new Date();
         deadline.setHours(deadline.getHours() + 2);
 
-        updatePayload.count_dispute_status = 'pending';
-        updatePayload.count_dispute_deadline = deadline;
-        updatePayload.notification_log = { ...(order.notificationLog || {}), countUpdateAlert: true };
+        updatePayload.countDisputeStatus = 'pending';
+        updatePayload.countDisputeDeadline = deadline;
+        updatePayload.notificationLog = { ...(order.notificationLog || {}), countUpdateAlert: true };
 
-        await supabase.from('orders').update(updatePayload).eq('id', order.id);
+        await updateDoc(doc(db, 'orders', order.id), updatePayload);
 
         // Send silent notification to student
         await sendNotification(
@@ -63,8 +68,8 @@ const OrderCard = ({ order, onAssignRack }) => {
 
         toast.success(`Count updated to ${newCount}. Student notified of the change.`);
       } else {
-        updatePayload.count_dispute_status = 'confirmed';
-        await supabase.from('orders').update(updatePayload).eq('id', order.id);
+        updatePayload.countDisputeStatus = 'confirmed';
+        await updateDoc(doc(db, 'orders', order.id), updatePayload);
         toast.success(`Count verified: ${newCount} items ✓`);
       }
 
@@ -98,26 +103,27 @@ const OrderCard = ({ order, onAssignRack }) => {
     try {
       const updatePayload = {
         status: 'collected',
-        collected_time: new Date(),
-        return_count: returnNum,
+        collectedTime: new Date(),
+        returnCount: returnNum,
       };
 
       if (returnNum < verifiedNum) {
         // AUTO-FILE missing item report
         const missingNum = verifiedNum - returnNum;
-        updatePayload.missing_item_reported = true;
-        updatePayload.missing_count = missingNum;
-        updatePayload.missing_item_desc = `Auto-detected: ${missingNum} item(s) missing. Verified count: ${verifiedNum}, returned: ${returnNum}. Reported by Dhobi at collection.`;
+        updatePayload.missingItemReported = true;
+        updatePayload.missingCount = missingNum;
+        updatePayload.missingItemDesc = `Auto-detected: ${missingNum} item(s) missing. Verified count: ${verifiedNum}, returned: ${returnNum}. Reported by Dhobi at collection.`;
         
-        await supabase.from('orders').update(updatePayload).eq('id', order.id);
+        await updateDoc(doc(db, 'orders', order.id), updatePayload);
 
         // Update analytics
         const today = new Date().toISOString().split('T')[0];
-        const { data: analyticsSnap } = await supabase.from('analytics').select('total_missing_reports').eq('id', today).single();
-        if (analyticsSnap) {
-          await supabase.from('analytics').update({
-            total_missing_reports: (analyticsSnap.total_missing_reports || 0) + 1
-          }).eq('id', today);
+        const analyticsRef = doc(db, 'analytics', today);
+        const analyticsSnap = await getDoc(analyticsRef);
+        if (analyticsSnap.exists()) {
+          await updateDoc(analyticsRef, {
+            totalMissingReports: (analyticsSnap.data().totalMissingReports || 0) + 1
+          });
         }
 
         // Notify student about missing items
@@ -132,9 +138,16 @@ const OrderCard = ({ order, onAssignRack }) => {
         });
       } else {
         // All items accounted for
-        updatePayload.missing_item_reported = false;
-        updatePayload.missing_count = 0;
-        await supabase.from('orders').update(updatePayload).eq('id', order.id);
+        updatePayload.missingItemReported = false;
+        updatePayload.missingCount = 0;
+        await updateDoc(doc(db, 'orders', order.id), updatePayload);
+        
+        // Notify student about successful collection
+        await sendNotification(
+          order.studentId,
+          `✅ Your laundry (${order.tokenId}) has been collected successfully. See you next time!`
+        );
+        
         toast.success('Order collected — all items accounted for ✓');
       }
 
@@ -151,7 +164,7 @@ const OrderCard = ({ order, onAssignRack }) => {
     if (!window.confirm(`Remove ${order.studentName}'s entry from the queue?`)) return;
     setLoading(true);
     try {
-      await supabase.from('orders').delete().eq('id', order.id);
+      await deleteDoc(doc(db, 'orders', order.id));
       toast.success('Entry removed');
     } catch (e) {
       console.error(e);

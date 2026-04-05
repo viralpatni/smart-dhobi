@@ -1,62 +1,34 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../supabase';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebase';
 
 export const useTodayAnalytics = () => {
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const today = new Date().toISOString().split('T')[0];
+    const docRef = doc(db, 'analytics', today);
 
-    const fetchAnalytics = async () => {
-      const { data, error } = await supabase
-        .from('analytics')
-        .select('*')
-        .eq('id', todayStr)
-        .single();
-
-      if (!error && data) {
-        setAnalytics(mapAnalytics(data));
+    const unsub = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setAnalytics({ id: docSnap.id, ...docSnap.data() });
       } else {
-        // No analytics for today yet — return defaults
         setAnalytics({
-          id: todayStr,
           totalDropOffs: 0,
-          totalWashed: 0,
           totalCollected: 0,
-          totalItemsProcessed: 0,
-          peakHour: '',
+          totalMissingReports: 0,
+          hourlyDropOffs: { "08": 0, "09": 0, "10": 0, "11": 0, "12": 0, "13": 0, "14": 0, "15": 0, "16": 0, "17": 0, "18": 0 }
         });
       }
       setLoading(false);
-    };
-    fetchAnalytics();
+    }, (error) => {
+      console.error("Error fetching analytics:", error);
+      setLoading(false);
+    });
 
-    const channel = supabase
-      .channel('today-analytics')
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'analytics',
-        filter: `id=eq.${todayStr}`,
-      }, (payload) => {
-        if (payload.new) setAnalytics(mapAnalytics(payload.new));
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
+    return () => unsub();
   }, []);
 
   return { analytics, loading };
 };
-
-function mapAnalytics(row) {
-  return {
-    id: row.id,
-    totalDropOffs: row.total_drop_offs || 0,
-    totalWashed: row.total_washed || 0,
-    totalCollected: row.total_collected || 0,
-    totalItemsProcessed: row.total_items_processed || 0,
-    peakHour: row.peak_hour || '',
-  };
-}

@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { supabase } from '../../supabase';
+import { auth } from '../../firebase';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { db } from '../../firebase';
 import KanbanBoard from '../../components/dhobi/KanbanBoard';
 import QRScannerModal from '../../components/dhobi/QRScannerModal';
-import ScheduleUploader from '../../components/dhobi/ScheduleUploader';
+import CallNextBatchModal from '../../components/dhobi/CallNextBatchModal';
+// Removed ScheduleUploader import
 import { useAllActiveOrders } from '../../hooks/useOrders';
 import Loader from '../../components/common/Loader';
 import { formatStandardDate } from '../../utils/formatDate';
@@ -14,13 +17,14 @@ const DhobiDashboard = () => {
   const navigate = useNavigate();
   const { orders, loading } = useAllActiveOrders();
   const [isScannerOpen, setIsScannerOpen] = useState(false);
-  const [isScheduleOpen, setIsScheduleOpen] = useState(false);
+  const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
+  // ScheduleUploader removed from Dhobi panel
   
   // Custom incoming alerts
   const incomingAlerts = orders.filter(o => o.status === 'onTheWay');
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
+  const handleLogout = () => {
+    auth.signOut();
     navigate('/login');
   };
 
@@ -40,26 +44,15 @@ const DhobiDashboard = () => {
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
             Dashboard
           </NavLink>
-          <button onClick={() => setIsScannerOpen(true)} className={`px-6 py-3 flex items-center gap-3 transition-colors text-slate-400 hover:text-white hover:bg-white/5 w-full text-left`}>
+          <button onClick={() => setIsScannerOpen(true)} className={`px-6 py-3 flex items-center gap-3 transition-colors text-left text-slate-400 hover:text-white hover:bg-white/5`}>
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm14 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path></svg>
             Scan QR
           </button>
-          <button onClick={() => setIsScheduleOpen(true)} className={`px-6 py-3 flex items-center gap-3 transition-colors text-slate-400 hover:text-white hover:bg-white/5 w-full text-left`}>
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-            Upload Schedule
+          <button onClick={() => setIsBatchModalOpen(true)} className={`px-6 py-3 flex items-center gap-3 transition-colors text-left text-slate-400 hover:text-white hover:bg-white/5`}>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"></path></svg>
+            Call Next Batch
           </button>
-          <NavLink to="/dhobi/analytics" className={({isActive}) => `px-6 py-3 flex items-center gap-3 transition-colors ${isActive ? 'bg-white/10 border-l-4 border-teal-400 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
-            Analytics
-          </NavLink>
-          <NavLink to="/dhobi/lost-and-found" className={({isActive}) => `px-6 py-3 flex items-center gap-3 transition-colors ${isActive ? 'bg-white/10 border-l-4 border-teal-400 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"></path></svg>
-            Lost & Found
-          </NavLink>
-          <NavLink to="/dhobi/complaints" className={({isActive}) => `px-6 py-3 flex items-center gap-3 transition-colors ${isActive ? 'bg-white/10 border-l-4 border-teal-400 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-            Complaints
-          </NavLink>
+
         </div>
         
         <div className="p-6 border-t border-slate-800">
@@ -118,7 +111,8 @@ const DhobiDashboard = () => {
       </div>
 
       <QRScannerModal isOpen={isScannerOpen} onClose={() => setIsScannerOpen(false)} />
-      <ScheduleUploader isOpen={isScheduleOpen} onClose={() => setIsScheduleOpen(false)} />
+      <CallNextBatchModal isOpen={isBatchModalOpen} onClose={() => setIsBatchModalOpen(false)} activeOrders={orders} />
+
     </div>
   );
 };

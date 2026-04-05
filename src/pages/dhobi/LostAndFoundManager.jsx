@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useAllComplaints } from '../../hooks/useLostAndFound';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { supabase } from '../../supabase';
+import { auth } from '../../firebase';
 import StaffComplaintCard from '../../components/lostAndFound/StaffComplaintCard';
 import Loader from '../../components/common/Loader';
 import { formatStandardDate } from '../../utils/formatDate';
@@ -27,8 +27,8 @@ const LostAndFoundManager = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('newest');
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
+  const handleLogout = () => {
+    auth.signOut();
     navigate('/login');
   };
 

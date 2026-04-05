@@ -1,148 +1,89 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../supabase';
+import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
+import { db } from '../firebase';
 
-// Student: my paid orders
 export const useStudentPaidOrders = (studentId) => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!studentId) { setLoading(false); return; }
-
-    const fetch = async () => {
-      const { data } = await supabase
-        .from('paid_orders')
-        .select('*')
-        .eq('student_id', studentId)
-        .order('created_at', { ascending: false });
-      setOrders((data || []).map(mapPaidOrder));
+    if (!studentId) {
       setLoading(false);
-    };
-    fetch();
+      return;
+    }
 
-    const channel = supabase
-      .channel(`student-paid-${studentId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'paid_orders', filter: `student_id=eq.${studentId}` }, () => fetch())
-      .subscribe();
+    const q = query(
+      collection(db, 'paidOrders'),
+      where('studentId', '==', studentId),
+      orderBy('createdAt', 'desc')
+    );
 
-    return () => supabase.removeChannel(channel);
+    const unsub = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setOrders(data);
+      setLoading(false);
+    }, (error) => {
+      console.error("Error fetching paid orders:", error);
+      setLoading(false);
+    });
+
+    return () => unsub();
   }, [studentId]);
 
   return { orders, loading };
 };
 
-// Staff: active paid orders (not delivered)
-export const useActivePaidOrders = () => {
-  const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const fetch = async () => {
-      const { data } = await supabase
-        .from('paid_orders')
-        .select('*')
-        .neq('status', 'delivered')
-        .order('created_at', { ascending: false });
-      setOrders((data || []).map(mapPaidOrder));
-      setLoading(false);
-    };
-    fetch();
-
-    const channel = supabase
-      .channel('active-paid-orders')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'paid_orders' }, () => fetch())
-      .subscribe();
-
-    return () => supabase.removeChannel(channel);
-  }, []);
-
-  return { orders, loading };
-};
-
-// Staff: all paid orders
-export const useAllPaidOrders = () => {
-  const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const fetch = async () => {
-      const { data } = await supabase
-        .from('paid_orders')
-        .select('*')
-        .order('created_at', { ascending: false });
-      setOrders((data || []).map(mapPaidOrder));
-      setLoading(false);
-    };
-    fetch();
-
-    const channel = supabase
-      .channel('all-paid-orders')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'paid_orders' }, () => fetch())
-      .subscribe();
-
-    return () => supabase.removeChannel(channel);
-  }, []);
-
-  return { orders, loading };
-};
-
-// Student: current active paid order
 export const useActivePaidOrder = (studentId) => {
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!studentId) { setLoading(false); return; }
+    if (!studentId) {
+      setLoading(false);
+      return;
+    }
 
-    const fetch = async () => {
-      const { data, error } = await supabase
-        .from('paid_orders')
-        .select('*')
-        .eq('student_id', studentId)
-        .neq('status', 'delivered')
-        .order('created_at', { ascending: false })
-        .maybeSingle();
+    const q = query(
+      collection(db, 'paidOrders'),
+      where('studentId', '==', studentId),
+      where('status', 'in', ['scheduled', 'onTheWay', 'pickedUp', 'washing', 'readyForDelivery', 'outForDelivery'])
+    );
 
-      if (data) {
-        setOrder(mapPaidOrder(data));
+    const unsub = onSnapshot(q, (snapshot) => {
+      if (!snapshot.empty) {
+        setOrder({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() });
       } else {
         setOrder(null);
       }
       setLoading(false);
-    };
-    fetch();
+    });
 
-    const channel = supabase
-      .channel(`active-order-${studentId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'paid_orders', filter: `student_id=eq.${studentId}` }, () => fetch())
-      .subscribe();
-
-    return () => supabase.removeChannel(channel);
+    return () => unsub();
   }, [studentId]);
 
   return { order, loading };
 };
 
-function mapPaidOrder(row) {
-  return {
-    id: row.id,
-    tokenId: row.token_id,
-    studentId: row.student_id,
-    studentName: row.student_name,
-    studentRoom: row.student_room,
-    studentPhone: row.student_phone,
-    hostelBlock: row.hostel_block,
-    scheduleId: row.schedule_id,
-    items: row.items,
-    totalAmount: row.total_amount,
-    actualItemsCount: row.actual_items_count,
-    status: row.status,
-    paymentStatus: row.payment_status,
-    paymentCollectedAt: row.payment_collected_at,
-    staffNotes: row.staff_notes,
-    pickupNotes: row.pickup_notes,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
+export const useAllPaidOrders = (statusFilter) => {
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
 
+  useEffect(() => {
+    const q = statusFilter && statusFilter !== 'all'
+      ? query(collection(db, 'paidOrders'), where('status', '==', statusFilter))
+      : query(collection(db, 'paidOrders'), orderBy('createdAt', 'desc'));
+
+    const unsub = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setOrders(data);
+      setLoading(false);
+    }, (error) => {
+      console.error("Error fetching all paid orders:", error);
+      setLoading(false);
+    });
+
+    return () => unsub();
+  }, [statusFilter]);
+
+  return { orders, loading };
+};

@@ -1,107 +1,74 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../supabase';
+import {
+  collection, query, where, onSnapshot, orderBy,
+  getDocs
+} from 'firebase/firestore';
+import { db } from '../firebase';
 
-// Student: my lost item complaints
 export const useStudentComplaints = (studentId) => {
   const [complaints, setComplaints] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (!studentId) { setLoading(false); return; }
-
-    const fetch = async () => {
-      const { data } = await supabase
-        .from('lost_and_found')
-        .select('*')
-        .eq('student_id', studentId)
-        .order('created_at', { ascending: false });
-      setComplaints((data || []).map(mapLostItem));
+    if (!studentId) {
       setLoading(false);
-    };
-    fetch();
+      return;
+    }
 
-    const channel = supabase
-      .channel(`student-laf-${studentId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'lost_and_found', filter: `student_id=eq.${studentId}` }, () => fetch())
-      .subscribe();
+    const q = query(
+      collection(db, 'lostAndFound'),
+      where('studentId', '==', studentId),
+      orderBy('createdAt', 'desc')
+    );
 
-    return () => supabase.removeChannel(channel);
+    const unsub = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setComplaints(data);
+      setLoading(false);
+    }, (err) => {
+      console.error('Error fetching student complaints:', err);
+      setError(err);
+      setLoading(false);
+    });
+
+    return () => unsub();
   }, [studentId]);
 
-  return { complaints, loading };
+  return { complaints, loading, error };
 };
 
-// Staff/admin: all lost item complaints
 export const useAllComplaints = () => {
   const [complaints, setComplaints] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    const fetch = async () => {
-      const { data } = await supabase
-        .from('lost_and_found')
-        .select('*')
-        .order('created_at', { ascending: false });
-      setComplaints((data || []).map(mapLostItem));
+    const q = query(
+      collection(db, 'lostAndFound'),
+      orderBy('createdAt', 'desc')
+    );
+
+    const unsub = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setComplaints(data);
       setLoading(false);
-    };
-    fetch();
+    }, (err) => {
+      console.error('Error fetching all complaints:', err);
+      setError(err);
+      setLoading(false);
+    });
 
-    const channel = supabase
-      .channel('all-laf')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'lost_and_found' }, () => fetch())
-      .subscribe();
-
-    return () => supabase.removeChannel(channel);
+    return () => unsub();
   }, []);
 
-  return { complaints, loading };
+  return { complaints, loading, error };
 };
 
-// Get complaint timeline events
 export const getComplaintTimeline = async (complaintId) => {
-  const { data, error } = await supabase
-    .from('lost_and_found_timeline')
-    .select('*')
-    .eq('complaint_id', complaintId)
-    .order('timestamp', { ascending: true });
-
-  if (error) throw error;
-  return (data || []).map(row => ({
-    id: row.id,
-    event: row.event,
-    by: row.by,
-    note: row.note,
-    timestamp: row.timestamp,
-  }));
+  if (!complaintId) return [];
+  const timelineRef = collection(db, 'lostAndFound', complaintId, 'timeline');
+  const q = query(timelineRef, orderBy('timestamp', 'asc'));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 };
-
-function mapLostItem(row) {
-  return {
-    id: row.id,
-    studentId: row.student_id,
-    studentName: row.student_name,
-    studentPhone: row.student_phone,
-    studentRoom: row.student_room,
-    hostelBlock: row.hostel_block,
-    relatedOrderId: row.related_order_id,
-    relatedTokenId: row.related_token_id,
-    collectionDate: row.collection_date,
-    itemType: row.item_type,
-    itemColor: row.item_color,
-    itemBrand: row.item_brand,
-    itemDescription: row.item_description,
-    itemPhoto: row.item_photo,
-    quantity: row.quantity,
-    status: row.status,
-    priority: row.priority,
-    assignedDhobiId: row.assigned_dhobi_id,
-    staffNotes: row.staff_notes,
-    foundLocation: row.found_location,
-    resolvedAt: row.resolved_at,
-    resolutionNote: row.resolution_note,
-    notificationLog: row.notification_log,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}

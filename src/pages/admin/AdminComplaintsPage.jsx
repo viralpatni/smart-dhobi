@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { supabase } from '../../supabase';
+import { db } from '../../firebase';
+import { collection, query, getDocs, orderBy, limit } from 'firebase/firestore';
 import { useAllComplaints } from '../../hooks/useComplaints';
 import Loader from '../../components/common/Loader';
 import { format } from 'date-fns';
@@ -24,16 +25,9 @@ const AdminComplaintsPage = () => {
   useEffect(() => {
     const fetchAnalytics = async () => {
       try {
-        const { data, error } = await supabase.from('complaint_analytics').select('*').order('month', { ascending: false }).limit(6);
-        if (data) {
-           setAnalytics(data.map(d => ({
-              id: d.id,
-              month: d.month,
-              totalComplaints: d.total_complaints,
-              totalFeedback: d.total_feedback,
-              categoryBreakdown: d.category_breakdown
-           })).reverse());
-        }
+        const q = query(collection(db, 'complaintAnalytics'), orderBy('month', 'desc'), limit(6));
+        const snap = await getDocs(q);
+        setAnalytics(snap.docs.map(d => ({id: d.id, ...d.data()})).reverse());
       } catch (e) {
         console.error(e);
       } finally {
@@ -251,7 +245,7 @@ const AdminComplaintsPage = () => {
                               {renderBadge(comp)}
                            </td>
                            <td className="p-4 text-xs text-slate-500 font-medium">
-                              {comp.createdAt ? format(new Date(comp.createdAt), 'dd MMM, yy') : ''}
+                              {comp.createdAt ? format(comp.createdAt.toDate(), 'dd MMM, yy') : ''}
                            </td>
                            <td className="p-4 text-right">
                               <button 

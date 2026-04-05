@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase } from '../../supabase';
+import { db, storage } from '../../firebase';
+import { collection, query, where, getDocs, addDoc, serverTimestamp, updateDoc, doc } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 
@@ -8,7 +10,8 @@ const OnMyWayButton = ({ scheduleId }) => {
   const [checking, setChecking] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [alreadyNotified, setAlreadyNotified] = useState(false);
-  // Removed clothesCount and photo state
+  const [numberOfClothes, setNumberOfClothes] = useState('');
+  const [photos, setPhotos] = useState([]);
   const { userData, currentUser } = useAuth();
 
   useEffect(() => {
@@ -18,14 +21,14 @@ const OnMyWayButton = ({ scheduleId }) => {
         return;
       }
       try {
-        const { data, error } = await supabase
-          .from('orders')
-          .select('id')
-          .eq('student_id', currentUser.uid)
-          .eq('status', 'onTheWay');
+        const q = query(
+          collection(db, 'orders'),
+          where('studentId', '==', currentUser.uid),
+          where('status', '==', 'onTheWay')
+        );
+        const querySnapshot = await getDocs(q);
           
-        if (error) throw error;
-        if (data && data.length > 0) {
+        if (!querySnapshot.empty) {
           setAlreadyNotified(true);
         }
       } catch (e) {
@@ -37,56 +40,87 @@ const OnMyWayButton = ({ scheduleId }) => {
     checkExisting();
   }, [currentUser]);
 
-  // Removed MAX_CLOTHES
-
-  // Removed handlePhotoCapture
-
-  // Removed compressAndConvertToBase64
-
   const handleNotify = async () => {
+    if (!numberOfClothes || isNaN(numberOfClothes) || parseInt(numberOfClothes) <= 0) {
+      toast.error("Please enter a valid number of clothes.");
+      return;
+    }
+
     setLoading(true);
     try {
       // Double-check no duplicate
-      const { data: existingData, error: existingError } = await supabase
-        .from('orders')
-        .select('id')
-        .eq('student_id', currentUser.uid)
-        .eq('status', 'onTheWay');
+      const q = query(
+          collection(db, 'orders'),
+          where('studentId', '==', currentUser.uid),
+          where('status', '==', 'onTheWay')
+      );
+      const querySnapshot = await getDocs(q);
         
-      if (existingError) throw existingError;
-      
-      if (existingData && existingData.length > 0) {
+      if (!querySnapshot.empty) {
         setAlreadyNotified(true);
         toast('Staff was already notified!', { icon: 'ℹ️' });
         setLoading(false);
         return;
       }
 
-      await supabase.from('orders').insert({
-        token_id: 'PENDING',
-        student_id: currentUser.uid,
-        student_name: userData.name,
-        student_phone: userData.phone,
-        student_room: userData.roomNo,
-        student_block: userData.hostelBlock,
-        student_unique_id: userData.uniqueId || '',
-        dhobi_id: '',
+      const orderRef = await addDoc(collection(db, 'orders'), {
+        tokenId: 'PENDING',
+        studentId: currentUser.uid,
+        studentName: userData.name,
+        studentPhone: userData.phone,
+        studentRoom: userData.roomNo,
+        studentBlock: userData.hostelBlock,
+        studentUniqueId: userData.uniqueId || '',
+        dhobiId: '',
         status: 'onTheWay',
-        drop_off_time: null,
-        rack_assigned_time: null,
-        collected_time: null,
-        missing_item_reported: false,
-        missing_item_desc: '',
-        missing_count: 0,
-        count_dispute_status: null, // null | 'pending' | 'confirmed' | 'disputed'
-        count_dispute_deadline: null,
-        notification_log: {
-          drop_off_alert: false,
-          rack_ready_alert: false,
-          count_update_alert: false
+        expectedCount: parseInt(numberOfClothes),
+        dropOffTime: null,
+        rackAssignedTime: null,
+        collectedTime: null,
+        missingItemReported: false,
+        missingItemDesc: '',
+        missingCount: 0,
+        countDisputeStatus: null, // null | 'pending' | 'confirmed' | 'disputed'
+        countDisputeDeadline: null,
+        studentPhotos: [],
+        notificationLog: {
+          dropOffAlert: false,
+          rackReadyAlert: false,
+          countUpdateAlert: false
         },
-        created_at: new Date()
+        createdAt: serverTimestamp()
       });
+
+      // Now handle photo uploads if there are any
+      if (photos.length > 0) {
+        toast.loading("Uploading photos...", { id: "photo-upload" });
+        try {
+          const uploadPromises = photos.map(async (photo) => {
+            // Create a reference for the file
+            const fileExtension = photo.name.split('.').pop() || 'jpg';
+            const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExtension}`;
+            const photoRef = ref(storage, `laundry_photos/${orderRef.id}/${fileName}`);
+            
+            // Upload the file
+            await uploadBytes(photoRef, photo);
+            
+            // Get the download URL
+            return await getDownloadURL(photoRef);
+          });
+          
+          const uploadedPhotoUrls = await Promise.all(uploadPromises);
+          
+          // Update the order with photo URLs
+          await updateDoc(doc(db, 'orders', orderRef.id), {
+            studentPhotos: uploadedPhotoUrls
+          });
+          
+          toast.success("Photos uploaded successfully!", { id: "photo-upload" });
+        } catch (uploadError) {
+          console.error("Error uploading photos:", uploadError);
+          toast.error("Order created, but failed to upload some photos.", { id: "photo-upload" });
+        }
+      }
 
       setAlreadyNotified(true);
       toast.success("Staff has been notified! Head to the counter.");
@@ -130,9 +164,49 @@ const OnMyWayButton = ({ scheduleId }) => {
             <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 flex items-start gap-2 mb-4">
               <span className="text-blue-500 shrink-0 mt-0.5">💡</span>
               <p className="text-xs text-blue-700">
-                Head to the counter to drop off your laundry. No item count or photo required!
+                Please enter the approximate number of clothes and upload photos of them below.
               </p>
             </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Number of Clothes <span className="text-red-500">*</span>
+              </label>
+              <input 
+                type="number" 
+                min="1"
+                required
+                value={numberOfClothes}
+                onChange={(e) => setNumberOfClothes(e.target.value)}
+                className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all"
+                placeholder="e.g. 15"
+              />
+            </div>
+
+            <div className="mb-5">
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Upload Photos (Optional)
+              </label>
+              <input 
+                type="file" 
+                multiple 
+                accept="image/*"
+                onChange={(e) => setPhotos(Array.from(e.target.files))}
+                className="w-full text-sm text-slate-500
+                  file:mr-4 file:py-2 file:px-4
+                  file:rounded-xl file:border-0
+                  file:text-sm file:font-semibold
+                  file:bg-amber-50 file:text-amber-700
+                  hover:file:bg-amber-100
+                  cursor-pointer bg-slate-50 border border-slate-200 rounded-xl p-1"
+              />
+              {photos.length > 0 && (
+                <div className="mt-2 text-xs font-medium text-teal-600 bg-teal-50 px-2 py-1 rounded-md inline-block">
+                  ✓ {photos.length} photo{photos.length > 1 ? 's' : ''} selected
+                </div>
+              )}
+            </div>
+
             <div className="flex gap-3 pt-1">
               <button
                 onClick={() => setShowForm(false)}

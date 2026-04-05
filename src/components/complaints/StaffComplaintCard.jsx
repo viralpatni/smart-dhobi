@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { format } from 'date-fns';
-import { supabase } from '../../supabase';
+import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../../firebase';
 import toast from 'react-hot-toast';
 import ComplaintThread from './ComplaintThread';
 import { useAuth } from '../../context/AuthContext';
@@ -19,9 +20,9 @@ const StaffComplaintCard = ({ complaint }) => {
   const handleAcknowledge = async () => {
     setProcessing(true);
     try {
-      await supabase.from('complaints').update({
+      await updateDoc(doc(db, 'complaints', complaint.id), {
         status: 'acknowledged'
-      }).eq('id', complaint.id);
+      });
       toast.success('Complaint acknowledged');
     } catch (e) {
       console.error(e);
@@ -34,9 +35,9 @@ const StaffComplaintCard = ({ complaint }) => {
   const handleMarkInReview = async () => {
     setProcessing(true);
     try {
-      await supabase.from('complaints').update({
+      await updateDoc(doc(db, 'complaints', complaint.id), {
         status: 'inReview'
-      }).eq('id', complaint.id);
+      });
       toast.success('Complaint marked as In Review');
     } catch (e) {
       console.error(e);
@@ -53,13 +54,13 @@ const StaffComplaintCard = ({ complaint }) => {
     }
     setProcessing(true);
     try {
-      await supabase.from('complaints').update({
+      await updateDoc(doc(db, 'complaints', complaint.id), {
         status: 'resolvedByStaff',
-        staff_response: responseMsg.trim(),
-        resolution_summary: resolutionSummary.trim(),
-        staff_responded_at: new Date(),
-        staff_responded_by: currentUser.uid
-      }).eq('id', complaint.id);
+        staffResponse: responseMsg.trim(),
+        resolutionSummary: resolutionSummary.trim(),
+        staffRespondedAt: serverTimestamp(),
+        staffRespondedBy: currentUser.uid
+      });
       toast.success('Complaint resolved successfully!');
       setShowResponseForm(false);
       setShowThread(true);
@@ -99,7 +100,7 @@ const StaffComplaintCard = ({ complaint }) => {
             </span>
           </div>
           <span className="text-xs text-slate-400 font-medium">
-            {complaint.createdAt ? format(new Date(complaint.createdAt), 'dd MMM, hh:mm a') : ''}
+            {complaint.createdAt ? format(complaint.createdAt.toDate(), 'dd MMM, hh:mm a') : ''}
           </span>
         </div>
 

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { format } from 'date-fns';
-import { supabase } from '../../supabase';
+import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 import ComplaintThread from './ComplaintThread';
@@ -18,7 +19,7 @@ const AdminComplaintDetail = ({ complaint, onClose }) => {
 
   const handleUpdateMeta = async (field, value) => {
     try {
-      await supabase.from('complaints').update({ [field]: value }).eq('id', complaint.id);
+      await updateDoc(doc(db, 'complaints', complaint.id), { [field]: value });
       if (field === 'status') setStatus(value);
       if (field === 'priority') setPriority(value);
       toast.success(`Updated ${field}`);
@@ -34,13 +35,13 @@ const AdminComplaintDetail = ({ complaint, onClose }) => {
     }
     setProcessing(true);
     try {
-      await supabase.from('complaints').update({
+      await updateDoc(doc(db, 'complaints', complaint.id), {
         status: 'resolvedByAdmin',
-        admin_response: adminResponse.trim(),
-        resolution_summary: `Admin Intervention: ${adminResponse.trim().substring(0, 100)}...`,
-        admin_responded_at: new Date(),
-        admin_responded_by: currentUser.uid
-      }).eq('id', complaint.id);
+        adminResponse: adminResponse.trim(),
+        resolutionSummary: `Admin Intervention: ${adminResponse.trim().substring(0, 100)}...`,
+        adminRespondedAt: serverTimestamp(),
+        adminRespondedBy: currentUser.uid
+      });
       toast.success('Resolved as Admin');
       setStatus('resolvedByAdmin');
       setAdminResponse('');
@@ -58,10 +59,10 @@ const AdminComplaintDetail = ({ complaint, onClose }) => {
     }
     setProcessing(true);
     try {
-      await supabase.from('complaints').update({
+      await updateDoc(doc(db, 'complaints', complaint.id), {
         status: 'closed',
-        resolution_summary: `Force Closed by Admin: ${closingNote.trim()}`
-      }).eq('id', complaint.id);
+        resolutionSummary: `Force Closed by Admin: ${closingNote.trim()}`
+      });
       toast.success('Ticket Force Closed');
       setStatus('closed');
       setShowCloseConfirm(false);

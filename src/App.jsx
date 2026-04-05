@@ -9,7 +9,7 @@ import StudentQRPage from './pages/student/StudentQRPage';
 import StudentHistory from './pages/student/StudentHistory';
 import LostAndFoundPage from './pages/student/LostAndFoundPage';
 import DhobiDashboard from './pages/dhobi/DhobiDashboard';
-import DhobiAnalytics from './pages/dhobi/DhobiAnalytics';
+
 import LostAndFoundManager from './pages/dhobi/LostAndFoundManager';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import ProtectedRoute from './components/common/ProtectedRoute';
@@ -78,21 +78,13 @@ function App() {
             <DhobiDashboard />
           </ProtectedRoute>
         } />
-        <Route path="/dhobi/analytics" element={
-          <ProtectedRoute allowedRoles={['staff']}>
-            <DhobiAnalytics />
-          </ProtectedRoute>
-        } />
+
         <Route path="/dhobi/lost-and-found" element={
           <ProtectedRoute allowedRoles={['staff']}>
             <LostAndFoundManager />
           </ProtectedRoute>
         } />
-        <Route path="/dhobi/complaints" element={
-          <ProtectedRoute allowedRoles={['staff']}>
-            <StaffComplaintsPage />
-          </ProtectedRoute>
-        } />
+
 
         {/* Paid Dhobi Staff Routes */}
         <Route path="/paid-dhobi" element={

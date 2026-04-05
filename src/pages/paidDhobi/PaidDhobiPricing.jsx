@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAllPaidPricing } from '../../hooks/usePaidPricing';
-import { supabase } from '../../supabase';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import Loader from '../../components/common/Loader';
 import PricingTable from '../../components/paidDhobi/PricingTable';
@@ -31,15 +32,12 @@ const PaidDhobiPricing = () => {
         return;
       }
 
-      await supabase.from('paid_pricing').insert({
-        item_name: newItem.itemName,
-        category: newItem.category,
-        price_per_piece: numPrice,
-        unit: newItem.unit,
-        is_available: newItem.isAvailable,
-        icon_emoji: newItem.iconEmoji,
-        display_order: items.length + 1,
-        updated_by: userData.uid,
+      await addDoc(collection(db, 'paidPricing'), {
+        ...newItem,
+        pricePerPiece: numPrice,
+        displayOrder: items.length + 1,
+        lastUpdatedBy: userData.uid,
+        lastUpdatedAt: serverTimestamp()
       });
 
       toast.success('Pricelist item added successfully');

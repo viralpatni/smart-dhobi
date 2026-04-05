@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { supabase } from '../supabase';
+import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { auth, db } from '../firebase';
 import { useNavigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
@@ -8,10 +10,9 @@ const SignupPage = () => {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  // Form State
   const [formData, setFormData] = useState({
     name: '',
-    uniqueId: '', // Represents Registration ID or Staff ID
+    uniqueId: '',
     mobile: '',
     password: '',
     hostelBlock: 'Block A',
@@ -22,98 +23,49 @@ const SignupPage = () => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const validateMobile = (mobile) => {
-    const mobileRegex = /^[0-9]{10}$/;
-    return mobileRegex.test(mobile);
-  };
-
-  const validateStudentId = (id) => {
-    const idRegex = /^[0-9]{2}[a-zA-Z]{3}[0-9]{4}$/;
-    return idRegex.test(id);
-  };
-
-  const checkUniqueId = async (id, currentRole) => {
-    const { data } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('unique_id', id)
-      .eq('role', currentRole);
-    return !data || data.length === 0; // True if it doesn't exist yet
-  };
-
   const handleSignup = async (e) => {
     e.preventDefault();
-
-    if (!validateMobile(formData.mobile)) {
-      toast.error('Please enter a valid 10-digit mobile number.');
-      return;
-    }
-
-    if (role === 'student' && !validateStudentId(formData.uniqueId)) {
-      toast.error('Registration ID must be in the format e.g. 22BCE1789');
-      return;
-    }
-
-    if (formData.password.length < 6) {
-      toast.error('Password must be at least 6 characters.');
-      return;
-    }
-
     setLoading(true);
 
     try {
-      // Check for Unique ID usage before creating Auth account
-      const isUnique = await checkUniqueId(formData.uniqueId, role);
-      if (!isUnique) {
-        toast.error(`This ${role === 'student' ? 'Registration ID' : 'Staff ID'} is already registered.`);
-        setLoading(false);
-        return;
-      }
-
       const seamlessEmail = `${formData.uniqueId.toLowerCase().replace(/[^a-z0-9]/g, '')}@smartdhobi.com`;
+      const userCredential = await createUserWithEmailAndPassword(auth, seamlessEmail, formData.password);
+      const user = userCredential.user;
 
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: seamlessEmail,
-        password: formData.password,
-      });
-
-      if (authError) throw authError;
-      const user = authData.user;
-      if (!user) throw new Error('Signup failed - no user returned');
-
-      const profileData = {
-        id: user.id,
+      const userData = {
+        uid: user.uid,
         name: formData.name,
         email: seamlessEmail,
         phone: `+91${formData.mobile}`,
         role: role,
-        unique_id: formData.uniqueId,
-        hostel_block: role === 'student' ? formData.hostelBlock : '',
-        room_no: role === 'student' ? formData.roomNo : '',
+        uniqueId: formData.uniqueId,
+        createdAt: serverTimestamp()
       };
 
-      const { error: profileError } = await supabase.from('profiles').insert(profileData);
-      if (profileError) throw profileError;
+      if (role === 'student') {
+        userData.hostelBlock = formData.hostelBlock;
+        userData.roomNo = formData.roomNo;
+        userData.qrCodeData = user.uid;
+      }
 
-      toast.success('Registration successful!');
-      
-      // Auto-route to respective dashboard
+      await setDoc(doc(db, 'users', user.uid), userData);
+
+      toast.success('Registration complete!');
       if (role === 'student') navigate('/student/dashboard');
-      else if (role === 'staff') navigate('/dhobi/dashboard');
+      else if (role === 'admin') navigate('/admin/dashboard');
+      else if (role === 'paidStaff') navigate('/paid-dhobi/dashboard');
+      else navigate('/dhobi/dashboard');
 
     } catch (error) {
-      console.error('Signup Full Error:', error);
-      const msg = error.message || '';
-      
-      // If we created the auth user but profile failed, it's usually RLS or a duplicate.
-      // In a real app, you'd want to clean up the auth user or use a Postgres function (RPC) to do both together.
-      
-      if (msg.includes('already registered') || msg.includes('already been registered') || msg.includes('User already registered')) {
-        toast.error('This ID is already tied to an existing account. Try logging in instead.');
-      } else if (msg.includes('unexpected') || msg.includes('Database error')) {
-        toast.error('Server error during profile creation. Please contact support.');
+      console.error('Signup error:', error.code, error.message);
+      if (error.code === 'auth/email-already-in-use') {
+        toast.error('An account already exists with this ID.');
+      } else if (error.code === 'auth/weak-password') {
+        toast.error('Password is too weak. (Min 6 characters).');
+      } else if (error.code === 'auth/network-request-failed') {
+        toast.error('Network error. Check your connection or disable ad-blockers.');
       } else {
-        toast.error(`Signup failed: ${msg || 'Please check your connection and try again.'}`);
+        toast.error(`Registration failed: ${error.message}`);
       }
     } finally {
       setLoading(false);
@@ -121,37 +73,21 @@ const SignupPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F1F5F9] flex flex-col justify-center items-center p-4 py-10">
-      
+    <div className="min-h-screen bg-[#F1F5F9] flex flex-col justify-center items-center p-4">
       <div className="mb-8 text-center animate-fade-in-down">
-        <div className="w-16 h-16 bg-teal-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-teal-600/30">
-          <span className="text-3xl">🧺</span>
-        </div>
         <h1 className="text-3xl font-bold text-teal-700 tracking-tight">Join SmartDhobi</h1>
-        <p className="text-slate-500 mt-2 font-medium">Create your campus active account</p>
       </div>
-
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden border border-slate-100">
-        
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
         {/* Tabs */}
-        <div className="flex border-b border-slate-200 bg-slate-50">
-          <button 
-            className={`flex-1 py-4 text-sm font-bold transition-colors ${role === 'student' ? 'text-teal-600 border-b-2 border-teal-600 bg-white' : 'text-slate-500 hover:text-slate-700'}`}
-            onClick={() => setRole('student')}
-          >
-            Student Account
-          </button>
-          <button 
-            className={`flex-1 py-4 text-sm font-bold transition-colors ${role === 'staff' ? 'text-teal-600 border-b-2 border-teal-600 bg-white' : 'text-slate-500 hover:text-slate-700'}`}
-            onClick={() => setRole('staff')}
-          >
-            Dhobi Staff Account
-          </button>
+        <div className="flex border-b border-slate-200 bg-slate-50 overflow-x-auto text-xs sm:text-sm">
+          <button className={`flex-1 px-2 py-4 font-bold transition-colors whitespace-nowrap ${role === 'student' ? 'text-teal-600 border-b-2 border-teal-600 bg-white' : 'text-slate-500 hover:text-slate-700'}`} onClick={() => setRole('student')}>Student</button>
+          <button className={`flex-1 px-2 py-4 font-bold transition-colors whitespace-nowrap ${role === 'staff' ? 'text-teal-600 border-b-2 border-teal-600 bg-white' : 'text-slate-500 hover:text-slate-700'}`} onClick={() => setRole('staff')}>Dhobi</button>
+          <button className={`flex-1 px-2 py-4 font-bold transition-colors whitespace-nowrap ${role === 'admin' ? 'text-indigo-600 border-b-2 border-indigo-600 bg-white' : 'text-slate-500 hover:text-slate-700'}`} onClick={() => setRole('admin')}>Admin</button>
+          <button className={`flex-1 px-2 py-4 font-bold transition-colors whitespace-nowrap ${role === 'paidStaff' ? 'text-amber-500 border-b-2 border-amber-500 bg-white' : 'text-slate-500 hover:text-slate-700'}`} onClick={() => setRole('paidStaff')}>Premium</button>
         </div>
 
         <div className="p-8">
           <form onSubmit={handleSignup} className="space-y-5">
-            
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Full Name *</label>
               <input 
@@ -160,8 +96,8 @@ const SignupPage = () => {
                 required
                 value={formData.name}
                 onChange={handleChange}
-                className="w-full border border-slate-300 bg-slate-50 py-2.5 px-3 rounded-lg text-gray-900 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
-                placeholder="John Doe"
+                className="w-full border border-slate-300 py-2.5 px-3 rounded-lg text-gray-900 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
+                placeholder="hare ram"
               />
             </div>
 
@@ -175,15 +111,15 @@ const SignupPage = () => {
                 required
                 value={formData.uniqueId}
                 onChange={handleChange}
-                className="w-full border border-slate-300 bg-slate-50 py-2.5 px-3 rounded-lg text-gray-900 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 uppercase"
-                placeholder={role === 'student' ? 'e.g., 22BCE1789' : 'e.g., DHB-042'}
+                className="w-full border border-slate-300 py-2.5 px-3 rounded-lg text-gray-900 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 uppercase"
+                placeholder={role === 'student' ? '2024CS006' : 'e.g., DHB-042'}
               />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Mobile Number *</label>
               <div className="flex">
-                <span className="inline-flex items-center px-3 rounded-l-lg border border-r-0 border-slate-300 bg-slate-100 text-slate-500 sm:text-sm">
+                <span className="inline-flex items-center px-4 rounded-l-lg border border-r-0 border-slate-300 bg-slate-50 text-slate-500 sm:text-sm">
                   +91
                 </span>
                 <input 
@@ -193,7 +129,7 @@ const SignupPage = () => {
                   maxLength="10"
                   value={formData.mobile}
                   onChange={handleChange}
-                  className="flex-1 w-full border border-slate-300 bg-slate-50 py-2.5 px-3 rounded-none rounded-r-lg text-gray-900 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
+                  className="flex-1 w-full border border-slate-300 py-2.5 px-3 rounded-none rounded-r-lg text-gray-900 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
                   placeholder="9876543210"
                 />
               </div>
@@ -207,7 +143,7 @@ const SignupPage = () => {
                       name="hostelBlock" 
                       value={formData.hostelBlock} 
                       onChange={handleChange}
-                      className="w-full border border-slate-300 bg-slate-50 py-2.5 px-3 rounded-lg text-gray-900 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
+                      className="w-full border border-slate-300 py-2.5 px-3 rounded-lg text-gray-900 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 appearance-none bg-white"
                    >
                      <option value="Block A">Block A</option>
                      <option value="Block B">Block B</option>
@@ -223,8 +159,8 @@ const SignupPage = () => {
                      required
                      value={formData.roomNo}
                      onChange={handleChange}
-                     className="w-full border border-slate-300 bg-slate-50 py-2.5 px-3 rounded-lg text-gray-900 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
-                     placeholder="e.g. A-101"
+                     className="w-full border border-slate-300 py-2.5 px-3 rounded-lg text-gray-900 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
+                     placeholder="A-823"
                    />
                  </div>
               </div>
@@ -239,27 +175,26 @@ const SignupPage = () => {
                 minLength="6"
                 value={formData.password}
                 onChange={handleChange}
-                className="w-full border border-slate-300 bg-slate-50 py-2.5 px-3 rounded-lg text-gray-900 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
-                placeholder="Minimum 6 characters"
+                className="w-full border border-slate-300 py-2.5 px-3 rounded-lg text-gray-900 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
+                placeholder="•••••••"
               />
             </div>
 
             <button 
               type="submit" 
               disabled={loading}
-              className="w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg shadow-teal-600/30 transition-transform active:scale-[0.98] flex justify-center items-center text-base mt-8"
+              className="w-full bg-[#119584] hover:bg-teal-700 text-white font-bold py-3 px-4 rounded-xl shadow-md transition-transform active:scale-[0.98] flex justify-center items-center text-base mt-6"
             >
-              {loading ? <div className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin"></div> : 'Create Account'}
+              {loading ? <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin"></div> : 'Create Account'}
             </button>
           </form>
 
-          <p className="text-center text-sm text-slate-500 mt-6">
-            Already have an account? <Link to="/login" className="text-teal-600 font-bold hover:underline">Log in</Link>
+          <p className="text-center text-sm text-slate-500 mt-6 relative pb-2">
+            Already have an account? <Link to="/login" className="text-[#119584] font-bold hover:underline">Log in</Link>
           </p>
         </div>
       </div>
     </div>
-  );
-};
+  );};
 
 export default SignupPage;

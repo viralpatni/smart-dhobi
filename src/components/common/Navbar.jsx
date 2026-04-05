@@ -1,14 +1,14 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { supabase } from '../../supabase';
+import { auth } from '../../firebase';
 import { useNavigate } from 'react-router-dom';
 
 const Navbar = ({ title }) => {
   const { userData } = useAuth();
   const navigate = useNavigate();
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
+  const handleLogout = () => {
+    auth.signOut();
     navigate('/login');
   };
 

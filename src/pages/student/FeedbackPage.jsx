@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useStudentSubmissions } from '../../hooks/useComplaints';
-import { supabase } from '../../supabase';
+import { db, storage } from '../../firebase';
+import { collection, query, where, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
@@ -60,15 +62,16 @@ const FeedbackPage = () => {
     if (activeTab === 'new' && step === 1 && hasRelatedOrder && recentOrders.length === 0) {
       const fetchOrders = async () => {
         try {
-           const { data: freeData } = await supabase.from('orders').select('*').eq('student_id', currentUser.uid);
-           const { data: paidData } = await supabase.from('paid_orders').select('*').eq('student_id', currentUser.uid);
+           const freeQ = query(collection(db, 'orders'), where('studentId', '==', currentUser.uid));
+           const paidQ = query(collection(db, 'paidOrders'), where('studentId', '==', currentUser.uid));
+           const [freeSnap, paidSnap] = await Promise.all([getDocs(freeQ), getDocs(paidQ)]);
            
            let combined = [
-             ...(freeData || []).map(d => ({id: d.id, tokenId: d.token_id, createdAt: new Date(d.created_at), source: 'Free'})),
-             ...(paidData || []).map(d => ({id: d.id, tokenId: d.token_id, createdAt: new Date(d.created_at), source: 'Paid'}))
+             ...freeSnap.docs.map(d => ({id: d.id, ...d.data(), source: 'Free'})),
+             ...paidSnap.docs.map(d => ({id: d.id, ...d.data(), source: 'Paid'}))
            ];
            // Sort descending memory side
-           combined.sort((a,b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
+           combined.sort((a,b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
            setRecentOrders(combined.slice(0, 10)); // keep last 10
         } catch(e) {
            console.error("Failed to fetch recent orders:", e);
@@ -83,10 +86,9 @@ const FeedbackPage = () => {
     if (activeTab === 'new' && step === 1 && hasAgainstStaff) {
       const fetchStaff = async () => {
         try {
-          const { data } = await supabase.from('users').select('*').eq('role', againstStaffRole);
-          if (data) {
-            setStaffList(data.map(d => ({id: d.id, name: d.name, hostelBlock: d.hostel_block})));
-          }
+          const q = query(collection(db, 'users'), where('role', '==', againstStaffRole));
+          const snap = await getDocs(q);
+          setStaffList(snap.docs.map(d => ({id: d.id, ...d.data()})));
         } catch (e) {
           console.error("Failed to fetch staff:", e);
         }
@@ -122,13 +124,9 @@ const FeedbackPage = () => {
 
     try {
       if (attachment) {
-        const fileName = `${Date.now()}_${attachment.name}`;
-        const storagePath = `${currentUser.uid}/${fileName}`;
-        const { error } = await supabase.storage.from('complaints').upload(storagePath, attachment);
-        if (!error) {
-           const { data: { publicUrl } } = supabase.storage.from('complaints').getPublicUrl(storagePath);
-           attachmentUrl = publicUrl;
-        }
+        const fileRef = storageRef(storage, `complaints/${currentUser.uid}/${Date.now()}_${attachment.name}`);
+        await uploadBytes(fileRef, attachment);
+        attachmentUrl = await getDownloadURL(fileRef);
       }
 
       // Automatically determine priority based on business rules
@@ -143,77 +141,75 @@ const FeedbackPage = () => {
       let parsedStaff = selectedStaff ? JSON.parse(selectedStaff) : null;
 
       const payload = {
-        student_id: currentUser.uid,
-        student_name: userData.name,
-        student_phone: userData.phone || '',
-        student_room: userData.roomNo || '',
-        hostel_block: userData.hostelBlock || '',
+        studentId: currentUser.uid,
+        studentName: userData.name,
+        studentPhone: userData.phone || '',
+        studentRoom: userData.roomNo || '',
+        hostelBlock: userData.hostelBlock || '',
         
         type,
         category,
-        service_type: serviceType,
+        serviceType,
         
-        related_order_id: parsedOrder ? parsedOrder.id : null,
-        related_token_id: parsedOrder ? parsedOrder.tokenId : null,
+        relatedOrderId: parsedOrder ? parsedOrder.id : null,
+        relatedTokenId: parsedOrder ? parsedOrder.tokenId : null,
         
-        against_staff_id: parsedStaff ? parsedStaff.id : null,
-        against_staff_name: parsedStaff ? parsedStaff.name : null,
-        against_staff_role: parsedStaff ? againstStaffRole : null,
+        againstStaffId: parsedStaff ? parsedStaff.id : null,
+        againstStaffName: parsedStaff ? parsedStaff.name : null,
+        againstStaffRole: parsedStaff ? againstStaffRole : null,
         
         title,
         description,
-        suggested_solution: suggestedSolution.trim() || null,
-        attachment_url: attachmentUrl,
+        suggestedSolution: suggestedSolution.trim() || null,
+        attachmentUrl,
         rating: type === 'feedback' ? rating : null,
         
         status: 'submitted',
         priority,
         
-        staff_response: '',
-        staff_responded_at: null,
-        staff_responded_by: null,
+        staffResponse: '',
+        staffRespondedAt: null,
+        staffRespondedBy: null,
         
-        admin_response: '',
-        admin_responded_at: null,
-        admin_responded_by: null,
+        adminResponse: '',
+        adminRespondedAt: null,
+        adminRespondedBy: null,
         
-        resolved_at: null,
-        resolution_summary: '',
-        student_satisfied: null,
+        resolvedAt: null,
+        resolutionSummary: '',
+        studentSatisfied: null,
         
-        is_escalated: false,
-        escalated_at: null,
-        escalation_reason: '',
+        isEscalated: false,
+        escalatedAt: null,
+        escalationReason: '',
         
-        notification_log: {
+        notificationLog: {
           submissionConfirmed: false, staffNotified: false,
           acknowledgedByStaff: false, resolvedNotified: false, escalationNotified: false
         },
         
-        is_anonymous: isAnonymous,
-        created_at: new Date(),
-        updated_at: new Date()
+        isAnonymous: isAnonymous,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
       };
 
-      const { data: docData, error: insertError } = await supabase.from('complaints').insert(payload).select('id').single();
-      if (insertError) throw insertError;
-      const docRefId = docData.id;
+      const docRef = await addDoc(collection(db, 'complaints'), payload);
       
       // Auto-inject first thread message
-      await supabase.from('complaint_thread').insert({
-        complaint_id: docRefId,
-        author_id: "system",
-        author_name: "System",
-        author_role: "admin",
+      await addDoc(collection(db, `complaints/${docRef.id}/thread`), {
+        messageId: "sys_msg_1",
+        authorId: "system",
+        authorName: "System",
+        authorRole: "admin",
         message: type === 'complaint' 
           ? "Complaint submitted successfully. The team will review this within 48 hours." 
           : "Thank you for sharing your feedback with us!",
-        attachment_url: null,
-        is_internal: false,
-        created_at: new Date()
+        attachmentUrl: null,
+        isInternal: false,
+        createdAt: serverTimestamp()
       });
 
-      toast.success(type === 'complaint' ? `Complaint submitted (Ref: ${docRefId.substring(0,8).toUpperCase()})` : "Feedback submitted successfully!");
+      toast.success(type === 'complaint' ? `Complaint submitted (Ref: ${docRef.id.substring(0,8).toUpperCase()})` : "Feedback submitted successfully!");
       resetForm();
       setActiveTab('list');
 
@@ -265,7 +261,7 @@ const FeedbackPage = () => {
              <option value="">Select an order...</option>
              {recentOrders.map(o => (
                <option key={o.id} value={JSON.stringify({id: o.id, tokenId: o.tokenId})}>
-                 [{o.tokenId} | {o.source}] — {o.createdAt ? formatStandardDate(o.createdAt) : 'Recent'}
+                 [{o.tokenId} | {o.source}] — {o.createdAt ? format(o.createdAt.toDate(), 'dd MMM yyyy') : 'Recent'}
                </option>
              ))}
            </select>

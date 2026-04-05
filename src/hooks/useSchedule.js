@@ -1,169 +1,127 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../supabase';
+import { collection, query, where, getDocs, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebase';
+import { useAuth } from '../context/AuthContext';
 
-/**
- * Hook to get a student's laundry schedule
- */
-export const useStudentSchedule = (uid) => {
+const isRoomInRange = (roomNo, rangeStr) => {
+  if (!roomNo || !rangeStr || rangeStr.trim() === '') return false;
+  const parts = rangeStr.split('-').map(p => p.trim());
+  const studentRoomNum = parseInt(String(roomNo).replace(/\D/g, ''), 10);
+  if (parts.length === 2) {
+    const min = parseInt(parts[0], 10);
+    const max = parseInt(parts[1], 10);
+    if (!isNaN(studentRoomNum) && !isNaN(min) && !isNaN(max)) {
+      return studentRoomNum >= min && studentRoomNum <= max;
+    }
+  }
+  return false;
+};
+
+export const useStudentSchedule = (userId) => {
   const [schedule, setSchedule] = useState(null);
   const [allMyDates, setAllMyDates] = useState([]);
   const [monthName, setMonthName] = useState('');
   const [loading, setLoading] = useState(true);
+  const { userData } = useAuth();
 
   useEffect(() => {
-    if (!uid) {
+    if (!userId || !userData) {
       setLoading(false);
       return;
     }
 
-    const fetchProfileAndSchedule = async () => {
-      try {
-        // 1. Get user profile for block/room
-        const { data: profile, error: pError } = await supabase
-          .from('profiles')
-          .select('hostel_block, room_no')
-          .eq('id', uid)
-          .maybeSingle();
+    let unsub = () => {};
 
-        if (pError || !profile) throw pError || new Error('No profile');
+    try {
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      const currentMonth = now.getMonth() + 1;
+      const todayDate = now.getDate();
 
-        const block = profile.hostel_block;
-        const room = profile.room_no;
+      const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+      setMonthName(`${monthNames[currentMonth - 1]} ${currentYear}`);
 
-        // 2. Get current month schedules
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = now.getMonth() + 1;
-        setMonthName(now.toLocaleString('default', { month: 'long' }));
+      const studentBlock = userData.hostelBlock;
+      const studentRoom = userData.roomNo;
 
-        const { data: schedules, error: sError } = await supabase
-          .from('monthly_schedules')
-          .select('*')
-          .eq('year', year)
-          .eq('month', month)
-          .eq('hostel_block', block);
-
-        if (sError) throw sError;
-
-        // 3. Find matching schedule for room
-        let mySchedule = null;
-        let allDates = [];
-
-        schedules.forEach(s => {
-          if (isRoomInRange(room, s.room_range)) {
-            // Check if today is the day
-            const todayStr = now.toISOString().split('T')[0];
-            const scheduleDates = s.schedule_data || {};
-            
-            // Map dates for the timeline
-            Object.entries(scheduleDates).forEach(([date, dayInfo]) => {
-              const fullDate = `${year}-${month}-${date.padStart(2, '0')}`;
-              const isToday = fullDate === todayStr;
-              const isPast = new Date(fullDate) < new Date(todayStr);
-
-              const dateObj = {
-                date,
-                fullDate,
-                dayName: dayInfo.day,
-                roomRange: s.room_range,
-                isToday,
-                isPast,
-                isFuture: !isToday && !isPast,
-                id: s.id
-              };
-
-              allDates.push(dateObj);
-              if (isToday) mySchedule = dateObj;
-            });
-          }
-        });
-
-        // Sort dates
-        allDates.sort((a, b) => parseInt(a.date) - parseInt(b.date));
-
-        setSchedule(mySchedule);
-        setAllMyDates(allDates);
-      } catch (err) {
-        console.error('useStudentSchedule Error:', err);
-      } finally {
+      if (!studentBlock) {
+        setSchedule(null);
+        setAllMyDates([]);
         setLoading(false);
+        return;
       }
-    };
 
-    fetchProfileAndSchedule();
-  }, [uid]);
+      const q = query(
+        collection(db, 'monthlySchedules'),
+        where('year', '==', currentYear),
+        where('month', '==', currentMonth),
+        where('hostelBlock', '==', studentBlock)
+      );
 
+      unsub = onSnapshot(q, (snap) => {
+        if (snap.empty) {
+          setSchedule(null);
+          setAllMyDates([]);
+          setLoading(false);
+          return;
+        }
+
+        let foundTodaySchedule = null;
+        const studentDates = [];
+
+        for (const doc of snap.docs) {
+          const data = doc.data();
+          const scheduleMap = data.scheduleMap || {};
+          for (const [dateKey, rangeStr] of Object.entries(scheduleMap)) {
+            if (rangeStr && rangeStr.trim() !== '' && isRoomInRange(studentRoom, rangeStr)) {
+              const dayNum = parseInt(dateKey, 10);
+              const dateObj = new Date(currentYear, currentMonth - 1, dayNum);
+              const isPast = dayNum < todayDate;
+              const isToday = dayNum === todayDate;
+              const isFuture = dayNum > todayDate;
+
+              studentDates.push({
+                date: dayNum,
+                dateObj,
+                roomRange: rangeStr,
+                isPast,
+                isToday,
+                isFuture,
+                dayName: dateObj.toLocaleDateString('en-IN', { weekday: 'short' }),
+                fullDate: dateObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
+              });
+
+              if (isToday) {
+                foundTodaySchedule = {
+                  id: doc.id,
+                  hostelBlock: data.hostelBlock,
+                  roomRange: rangeStr,
+                  slotDate: `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(todayDate).padStart(2, '0')}`,
+                  slotTime: 'Today',
+                };
+              }
+            }
+          }
+        }
+
+        studentDates.sort((a, b) => a.date - b.date);
+        setSchedule(foundTodaySchedule);
+        setAllMyDates(studentDates);
+        setLoading(false);
+      }, (err) => {
+        console.error('Error fetching real-time schedule:', err);
+        setSchedule(null);
+        setAllMyDates([]);
+        setLoading(false);
+      });
+    } catch (error) {
+      console.error('Error setting up schedule listener:', error);
+      setSchedule(null);
+      setAllMyDates([]);
+      setLoading(false);
+    }
+
+    return () => unsub();
+  }, [userId, userData]);
   return { schedule, allMyDates, monthName, loading };
 };
-
-/**
- * Check if there's a schedule for given user's hostel block / room.
- * Returns { isScheduled, scheduleInfo, loading }
- */
-export const checkSchedule = async (hostelBlock, roomNo) => {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1;
-
-  try {
-    const { data, error } = await supabase
-      .from('monthly_schedules')
-      .select('*')
-      .eq('year', year)
-      .eq('month', month)
-      .eq('hostel_block', hostelBlock);
-
-    if (error) throw error;
-
-    if (!data || data.length === 0) {
-      return { isScheduled: false, scheduleInfo: null };
-    }
-
-    // Check if room number falls within any schedule's room range
-    for (const schedule of data) {
-      const scheduleData = schedule.schedule_data || {};
-      const roomRange = schedule.room_range || '';
-
-      if (isRoomInRange(roomNo, roomRange)) {
-        return {
-          isScheduled: true,
-          scheduleInfo: {
-            id: schedule.id,
-            year: schedule.year,
-            month: schedule.month,
-            hostelBlock: schedule.hostel_block,
-            scheduleData: scheduleData,
-            roomRange: schedule.room_range,
-          },
-        };
-      }
-    }
-
-    return { isScheduled: false, scheduleInfo: null };
-  } catch (err) {
-    console.error('Error checking schedule:', err);
-    return { isScheduled: false, scheduleInfo: null };
-  }
-};
-
-function isRoomInRange(roomNo, rangeStr) {
-  if (!rangeStr || !roomNo) return true; // No range means all rooms
-  const roomNum = parseInt(roomNo, 10);
-  if (isNaN(roomNum)) return true;
-
-  // Parse ranges like "101-120, 201-220"
-  const ranges = rangeStr.split(',').map(s => s.trim());
-  for (const range of ranges) {
-    if (range.includes('-')) {
-      const [start, end] = range.split('-').map(s => parseInt(s.trim(), 10));
-      if (!isNaN(start) && !isNaN(end) && roomNum >= start && roomNum <= end) {
-        return true;
-      }
-    } else {
-      const single = parseInt(range, 10);
-      if (!isNaN(single) && roomNum === single) return true;
-    }
-  }
-  return false;
-}
-

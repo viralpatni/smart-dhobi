@@ -2,33 +2,30 @@ import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useStudentOrder } from '../../hooks/useOrders';
 import { useStudentSchedule } from '../../hooks/useSchedule';
-import { useNotifications } from '../../hooks/useNotifications';
 import LiveStatusTracker from '../../components/student/LiveStatusTracker';
 import OnMyWayButton from '../../components/student/OnMyWayButton';
 import { Link, useNavigate } from 'react-router-dom';
-import { supabase } from '../../supabase';
+import { auth } from '../../firebase';
 import Loader from '../../components/common/Loader';
 import ModeSwitcher from '../../components/student/ModeSwitcher';
 import PaidDashboard from '../../components/student/PaidDashboard';
+import NotificationBell from '../../components/student/NotificationBell';
 
 const StudentDashboard = () => {
   const { userData, currentUser } = useAuth();
   const navigate = useNavigate();
   const [activeMode, setActiveMode] = useState('free');
+  const [isTrackingModalOpen, setIsTrackingModalOpen] = useState(false);
   const { order, loading: orderLoading } = useStudentOrder(currentUser?.uid);
   const { schedule, allMyDates, monthName, loading: scheduleLoading } = useStudentSchedule(currentUser?.uid);
 
-  // Listen to new real-time notifications
-  useNotifications(currentUser?.uid);
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
+  const handleLogout = () => {
+    auth.signOut();
     navigate('/login');
   };
 
   if (orderLoading || scheduleLoading) return <Loader fullScreen />;
-
-  if (!userData) return <Loader fullScreen />;
 
   const isRecentCollected = order && order.status === 'collected' && (() => {
     if (!order.collectedTime) return false;
@@ -51,9 +48,10 @@ const StudentDashboard = () => {
           <div className="flex justify-between items-center">
             <div>
               <p className="text-slate-500 text-sm">Good morning,</p>
-              <h1 className="text-xl font-bold text-gray-800">{userData?.name?.split(' ')[0] || 'Student'} 👋</h1>
+              <h1 className="text-xl font-bold text-gray-800">{userData.name.split(' ')[0]} 👋</h1>
             </div>
             <div className="flex items-center gap-3">
+              <NotificationBell userId={currentUser?.uid} />
               <button 
                 onClick={handleLogout}
                 className="text-xs font-bold text-slate-500 hover:text-red-500 transition-colors px-2 py-1 rounded border border-slate-200"
@@ -104,10 +102,15 @@ const StudentDashboard = () => {
           </div>
 
           {/* Status Region */}
-          {hasActiveOrder ? (
-            <LiveStatusTracker currentStatus={order.status} rackNo={order.rackNo} order={order} />
+          {hasActiveOrder && order.status !== 'onTheWay' ? (
+            <button 
+              onClick={() => setIsTrackingModalOpen(true)}
+              className="w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-4 px-4 rounded-xl shadow-lg shadow-teal-600/30 transition-transform active:scale-[0.98] flex items-center justify-center gap-2 text-lg mb-6"
+            >
+              <span className="text-2xl">📡</span> Track My Laundry
+            </button>
           ) : (
-             schedule && <OnMyWayButton scheduleId={schedule.id} />
+             (schedule || (order && order.status === 'onTheWay')) && <OnMyWayButton scheduleId={schedule?.id} />
           )}
 
           {/* ── Monthly Schedule Timeline ── */}
@@ -195,6 +198,27 @@ const StudentDashboard = () => {
             </div>
           )}
           </div>
+
+          {/* Tracking Modal */}
+          {isTrackingModalOpen && (
+            <div className="fixed inset-0 z-50 flex flex-col justify-end translate-x-1/2 right-1/2 max-w-[420px] w-full mx-auto pb-[72px]">
+              <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setIsTrackingModalOpen(false)}></div>
+              <div className="relative bg-slate-50 w-full rounded-t-3xl pt-2 pb-6 px-6 max-h-[85vh] overflow-y-auto shadow-2xl animate-fade-in-up">
+                <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-6"></div>
+                
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-black text-slate-800 tracking-tight">Order Tracking</h2>
+                  <button 
+                    onClick={() => setIsTrackingModalOpen(false)}
+                    className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200"
+                  >✕</button>
+                </div>
+  
+                <LiveStatusTracker currentStatus={order.status} rackNo={order.rackNo} order={order} />
+                
+              </div>
+            </div>
+          )}
 
           {/* ────── PAID LAUNDRY UI ────── */}
           {activeMode === 'paid' && <PaidDashboard />}

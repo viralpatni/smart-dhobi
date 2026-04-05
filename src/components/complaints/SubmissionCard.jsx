@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { format } from 'date-fns';
-import { supabase } from '../../supabase';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '../../firebase';
 import toast from 'react-hot-toast';
 import ComplaintThread from './ComplaintThread';
 
@@ -10,10 +11,10 @@ const SubmissionCard = ({ submission }) => {
 
   const handleSatisfaction = async (satisfied) => {
     try {
-      await supabase.from('complaints').update({
-        student_satisfied: satisfied,
+      await updateDoc(doc(db, 'complaints', submission.id), {
+        studentSatisfied: satisfied,
         status: 'closed'
-      }).eq('id', submission.id);
+      });
       toast.success(satisfied ? 'Glad we could help!' : 'Noted, the ticket is now closed.');
     } catch (e) {
       console.error(e);

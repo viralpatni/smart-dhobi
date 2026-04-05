@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../../supabase';
+import { auth, db } from '../../firebase';
+import { collection, query, getDocs } from 'firebase/firestore';
 import Loader from '../../components/common/Loader';
 import { seedFirestore } from '../../utils/seedData';
 import toast from 'react-hot-toast';
 import AdminComplaintsPage from './AdminComplaintsPage';
+import AdminAnalyticsTab from '../../components/admin/AdminAnalyticsTab';
+import ScheduleUploader from '../../components/dhobi/ScheduleUploader';
 
 const AdminDashboard = () => {
   const { userData } = useAuth();
@@ -13,26 +16,16 @@ const AdminDashboard = () => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Simple tabs: users, schedules
+  // Simple tabs: users, analytics, complaints
   const [activeTab, setActiveTab] = useState('users');
+  const [isScheduleOpen, setIsScheduleOpen] = useState(false);
 
   const fetchUsers = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.from('profiles').select('*');
-      if (error) throw error;
-      // Map snake_case to camelCase
-      const mapped = data.map(d => ({
-        id: d.id,
-        name: d.name,
-        email: d.email,
-        phone: d.phone,
-        role: d.role,
-        uniqueId: d.unique_id,
-        hostelBlock: d.hostel_block,
-        roomNo: d.room_no
-      }));
-      setUsers(mapped);
+      const q = query(collection(db, 'users'));
+      const snap = await getDocs(q);
+      setUsers(snap.docs.map(d => ({id: d.id, ...d.data()})));
     } catch (e) {
       console.error(e);
       toast.error('Failed to load users');
@@ -45,8 +38,8 @@ const AdminDashboard = () => {
     fetchUsers();
   }, []);
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
+  const handleLogout = () => {
+    auth.signOut();
     navigate('/login');
   };
 
@@ -81,6 +74,16 @@ const AdminDashboard = () => {
             User Management
           </button>
           
+          <button onClick={() => setIsScheduleOpen(true)} className={`px-6 py-3 flex items-center gap-3 transition-colors text-left text-slate-400 hover:text-white hover:bg-white/5`}>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+            Upload Schedule
+          </button>
+          
+          <button onClick={() => setActiveTab('analytics')} className={`px-6 py-3 flex items-center gap-3 transition-colors text-left ${activeTab==='analytics' ? 'bg-white/10 border-l-4 border-teal-400 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+            Analytics
+          </button>
+
           <button onClick={() => setActiveTab('complaints')} className={`px-6 py-3 flex items-center gap-3 transition-colors text-left ${activeTab==='complaints' ? 'bg-white/10 border-l-4 border-red-400 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
             Feedbacks & Complaints
@@ -212,8 +215,13 @@ const AdminDashboard = () => {
           {activeTab === 'complaints' && (
             <AdminComplaintsPage />
           )}
+          {activeTab === 'analytics' && (
+            <AdminAnalyticsTab />
+          )}
         </div>
       </div>
+      
+      <ScheduleUploader isOpen={isScheduleOpen} onClose={() => setIsScheduleOpen(false)} />
     </div>
   );
 };

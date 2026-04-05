@@ -1,20 +1,23 @@
-import { supabase } from '../supabase';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../firebase';
 
-/**
- * Send an in-app notification to a user.
- * Replaces the old Firestore addDoc(collection(db, 'notifications'), ...).
- */
 export const sendNotification = async (userId, message) => {
+  if (!userId) {
+    console.warn('sendNotification requires a valid userId. Notification dropped:', message);
+    return false;
+  }
+  
   try {
-    const { error } = await supabase
-      .from('notifications')
-      .insert({
-        user_id: userId,
-        message,
-        read: false,
-      });
-    if (error) throw error;
-  } catch (err) {
-    console.error('sendNotification error:', err);
+    const notificationsRef = collection(db, 'notifications');
+    await addDoc(notificationsRef, {
+      userId,
+      message,
+      read: false,
+      createdAt: serverTimestamp()
+    });
+    return true;
+  } catch (error) {
+    console.error('Notification error:', error);
+    return false;
   }
 };

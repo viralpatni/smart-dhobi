@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { supabase } from '../../supabase';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '../../firebase';
 import toast from 'react-hot-toast';
 
 const MissingItemModal = ({ isOpen, onClose, order }) => {
@@ -17,10 +18,11 @@ const MissingItemModal = ({ isOpen, onClose, order }) => {
 
     setLoading(true);
     try {
-      await supabase.from('orders').update({
-        missing_item_reported: true,
-        missing_item_desc: desc
-      }).eq('id', order.id);
+      const orderRef = doc(db, 'orders', order.id);
+      await updateDoc(orderRef, {
+        missingItemReported: true,
+        missingItemDesc: desc
+      });
       toast.success('Report submitted successfully. Staff will contact you.');
       onClose();
     } catch (error) {

@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../../supabase';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { useActivePaidSchedules } from '../../hooks/usePaidSchedules';
 import { usePaidPricing } from '../../hooks/usePaidPricing';
@@ -78,43 +79,43 @@ const PaidNewOrderPage = () => {
     try {
       const tokenId = generatePaidToken();
       const orderDocs = {
-        token_id: tokenId,
-        student_id: userData.uid,
-        student_name: userData.name,
-        student_phone: userData.phone,
-        student_room: userData.roomNo,
-        hostel_block: userData.hostelBlock,
-        paid_dhobi_id: null,
-        schedule_id: selectedSchedule.id,
-        pickup_date: selectedSchedule.pickupDate,
-        delivery_date: selectedSchedule.deliveryDate,
+        tokenId,
+        studentId: userData.uid,
+        studentName: userData.name,
+        studentPhone: userData.phone,
+        studentRoom: userData.roomNo,
+        hostelBlock: userData.hostelBlock,
+        paidDhobiId: null, // Assigned on pickup
+        scheduleId: selectedSchedule.id,
+        pickupDate: selectedSchedule.pickupDate,
+        deliveryDate: selectedSchedule.deliveryDate,
         items: orderTotals.itemsList,
-        total_amount: orderTotals.totalAmount,
-        payment_status: 'pending',
-        payment_collected_at: null,
-        payment_collected_by: null,
+        totalAmount: orderTotals.totalAmount,
+        paymentStatus: 'pending',
+        paymentCollectedAt: null,
+        paymentCollectedBy: null,
         status: 'scheduled',
-        qr_code_data: userData.uid,
-        pickup_confirmed_at: null,
-        actual_items_count: null,
-        delivered_at: null,
-        delivery_signed_off: false,
-        notification_log: {
+        qrCodeData: userData.uid,
+        pickupConfirmedAt: null,
+        actualItemsCount: null,
+        deliveredAt: null,
+        deliverySignedOff: false,
+        notificationLog: {
           orderConfirmed: true,
           pickupReminder: false,
           readyForDelivery: false,
           delivered: false
         },
-        audit_log: [{
+        auditLog: [{
           action: 'ORDER_PLACED',
           actor: 'Student',
           timestamp: new Date().toISOString()
         }],
-        created_at: new Date(),
-        updated_at: new Date()
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
       };
 
-      await supabase.from('paid_orders').insert(orderDocs);
+      await addDoc(collection(db, 'paidOrders'), orderDocs);
 
       // Notification
       const msg = `Your paid laundry order is confirmed! Token: ${tokenId}. Pickup: ${selectedSchedule.pickupDay} ${selectedSchedule.pickupDate} at ${selectedSchedule.pickupTimeSlot}. Estimated delivery: ${selectedSchedule.deliveryDate}. Total: ₹${orderTotals.totalAmount}. — SmartDhobi`;
